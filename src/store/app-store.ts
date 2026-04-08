@@ -2,9 +2,13 @@ import { create } from 'zustand';
 import { DBConnection, QueryTab, QueryResult, defaultTabs, mockQueryResult } from '@/lib/mock-data';
 
 interface AppState {
+  // Theme
+  theme: 'light' | 'dark';
+
   // Sidebar
   sidebarWidth: number;
-  activeSidebarTab: 'explorer' | 'connections' | 'search';
+  sidebarOpen: boolean;
+  activeSidebarTab: 'explorer' | 'connections' | 'search' | 'schema';
 
   // Tabs
   tabs: QueryTab[];
