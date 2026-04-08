@@ -1,4 +1,4 @@
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
+import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { TitleBar } from '@/components/TitleBar';
 import { ActivityBar } from '@/components/ActivityBar';
 import { AppSidebar } from '@/components/Sidebar';
