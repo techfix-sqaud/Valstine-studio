@@ -46,7 +46,7 @@ const Index = () => {
             {bottomPanelVisible && <ResultsPanel />}
           </div>
         ) : (
-          <Group direction="horizontal" className="flex-1">
+          <Group orientation="horizontal" className="flex-1">
             <Panel defaultSize={20} minSize={12} maxSize={35}>
               <AppSidebar />
             </Panel>
