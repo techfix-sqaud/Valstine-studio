@@ -27,7 +27,9 @@ interface AppState {
   activeConnectionId: string;
 
   // Actions
-  setActiveSidebarTab: (tab: 'explorer' | 'connections' | 'search') => void;
+  toggleTheme: () => void;
+  toggleSidebar: () => void;
+  setActiveSidebarTab: (tab: 'explorer' | 'connections' | 'search' | 'schema') => void;
   setActiveTab: (id: string) => void;
   addTab: (tab: QueryTab) => void;
   closeTab: (id: string) => void;
@@ -40,7 +42,9 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
+  theme: (typeof window !== 'undefined' && localStorage.getItem('db-studio-theme') as 'light' | 'dark') || 'dark',
   sidebarWidth: 260,
+  sidebarOpen: true,
   activeSidebarTab: 'explorer',
   tabs: defaultTabs,
   activeTabId: 'tab-1',
@@ -51,7 +55,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   commandPaletteOpen: false,
   activeConnectionId: 'conn-1',
 
-  setActiveSidebarTab: (tab) => set({ activeSidebarTab: tab }),
+  toggleTheme: () => set((s) => {
+    const next = s.theme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('db-studio-theme', next);
+    document.documentElement.classList.toggle('dark', next === 'dark');
+    return { theme: next };
+  }),
+  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  setActiveSidebarTab: (tab) => set({ activeSidebarTab: tab, sidebarOpen: true }),
   setActiveTab: (id) => set({ activeTabId: id }),
   addTab: (tab) => set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id })),
   closeTab: (id) => set((s) => {

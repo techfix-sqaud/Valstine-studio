@@ -2,7 +2,7 @@ import Editor from '@monaco-editor/react';
 import { useAppStore } from '@/store/app-store';
 
 export function QueryEditor() {
-  const { tabs, activeTabId, updateTabContent } = useAppStore();
+  const { tabs, activeTabId, updateTabContent, theme } = useAppStore();
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
   if (!activeTab) {
@@ -16,10 +16,10 @@ export function QueryEditor() {
   return (
     <div className="flex-1 overflow-hidden">
       <Editor
-        key={activeTab.id}
+        key={activeTab.id + theme}
         defaultValue={activeTab.content}
         language="sql"
-        theme="dbstudio-dark"
+        theme={theme === 'dark' ? 'dbstudio-dark' : 'dbstudio-light'}
         onChange={(v) => updateTabContent(activeTab.id, v ?? '')}
         beforeMount={(monaco) => {
           monaco.editor.defineTheme('dbstudio-dark', {
@@ -44,6 +44,30 @@ export function QueryEditor() {
               'editorWhitespace.foreground': '#3b4048',
               'editorIndentGuide.background': '#3b4048',
               'editor.selectionHighlightBackground': '#264f7844',
+            },
+          });
+          monaco.editor.defineTheme('dbstudio-light', {
+            base: 'vs',
+            inherit: true,
+            rules: [
+              { token: 'keyword', foreground: '0000ff', fontStyle: 'bold' },
+              { token: 'string', foreground: 'a31515' },
+              { token: 'number', foreground: '098658' },
+              { token: 'comment', foreground: '008000', fontStyle: 'italic' },
+              { token: 'operator', foreground: '333333' },
+              { token: 'type', foreground: '267f99' },
+            ],
+            colors: {
+              'editor.background': '#f8f8f8',
+              'editor.foreground': '#333333',
+              'editorLineNumber.foreground': '#999999',
+              'editorLineNumber.activeForeground': '#333333',
+              'editor.selectionBackground': '#add6ff',
+              'editor.lineHighlightBackground': '#f0f0f0',
+              'editorCursor.foreground': '#0066cc',
+              'editorWhitespace.foreground': '#cccccc',
+              'editorIndentGuide.background': '#dddddd',
+              'editor.selectionHighlightBackground': '#add6ff44',
             },
           });
         }}
