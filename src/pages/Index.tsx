@@ -1,4 +1,4 @@
-import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
+import { Panel, Group, Separator } from 'react-resizable-panels';
 import { TitleBar } from '@/components/TitleBar';
 import { ActivityBar } from '@/components/ActivityBar';
 import { AppSidebar } from '@/components/Sidebar';
@@ -14,7 +14,6 @@ import { useEffect } from 'react';
 const Index = () => {
   const { executeQuery, bottomPanelVisible } = useAppStore();
 
-  // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -31,13 +30,13 @@ const Index = () => {
       <TitleBar />
       <div className="flex-1 flex min-h-0">
         <ActivityBar />
-        <PanelGroup direction="horizontal" className="flex-1">
+        <Group orientation="horizontal" className="flex-1">
           <Panel defaultSize={20} minSize={12} maxSize={35}>
             <AppSidebar />
           </Panel>
-          <PanelResizeHandle />
+          <Separator />
           <Panel defaultSize={80}>
-            <PanelGroup direction="vertical">
+            <Group orientation="vertical">
               <Panel defaultSize={bottomPanelVisible ? 60 : 100} minSize={30}>
                 <div className="flex flex-col h-full">
                   <TabBar />
@@ -47,15 +46,15 @@ const Index = () => {
               </Panel>
               {bottomPanelVisible && (
                 <>
-                  <PanelResizeHandle />
+                  <Separator />
                   <Panel defaultSize={40} minSize={15}>
                     <ResultsPanel />
                   </Panel>
                 </>
               )}
-            </PanelGroup>
+            </Group>
           </Panel>
-        </PanelGroup>
+        </Group>
       </div>
       <StatusBar />
       <CommandPalette />
