@@ -151,9 +151,13 @@
 }
 
 /* Monaco overrides */
+.dark .monaco-editor .margin,
+.dark .monaco-editor .monaco-editor-background {
+  background-color: hsl(220 13% 15%) !important;
+}
 .monaco-editor .margin,
 .monaco-editor .monaco-editor-background {
-  background-color: hsl(220 13% 15%) !important;
+  background-color: hsl(0 0% 97%) !important;
 }
 
 /* Resizable panel handle */
