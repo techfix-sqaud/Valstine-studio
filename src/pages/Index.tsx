@@ -1,16 +1,65 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { Panel, Group, Separator } from 'react-resizable-panels';
+import { TitleBar } from '@/components/TitleBar';
+import { ActivityBar } from '@/components/ActivityBar';
+import { AppSidebar } from '@/components/Sidebar';
+import { TabBar } from '@/components/TabBar';
+import { EditorToolbar } from '@/components/EditorToolbar';
+import { QueryEditor } from '@/components/QueryEditor';
+import { ResultsPanel } from '@/components/ResultsPanel';
+import { StatusBar } from '@/components/StatusBar';
+import { CommandPalette } from '@/components/CommandPalette';
+import { useAppStore } from '@/store/app-store';
+import { useEffect } from 'react';
 
-// IMPORTANT: Fully REPLACE this with your own code
-const PlaceholderIndex = () => {
-  // PLACEHOLDER: Replace this entire return statement with the user's app.
-  // The inline background color is intentionally not part of the design system.
+const Index = () => {
+  const { executeQuery, bottomPanelVisible } = useAppStore();
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        executeQuery();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [executeQuery]);
+
   return (
-    <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#fcfbf8' }}>
-      <img data-lovable-blank-page-placeholder="REMOVE_THIS" src="/placeholder.svg" alt="Your app will live here!" />
+    <div className="h-screen flex flex-col overflow-hidden">
+      <TitleBar />
+      <div className="flex-1 flex min-h-0">
+        <ActivityBar />
+        <Group orientation="horizontal" className="flex-1">
+          <Panel defaultSize={20} minSize={12} maxSize={35}>
+            <AppSidebar />
+          </Panel>
+          <Separator />
+          <Panel defaultSize={80}>
+            <Group orientation="vertical">
+              <Panel defaultSize={bottomPanelVisible ? 60 : 100} minSize={30}>
+                <div className="flex flex-col h-full">
+                  <TabBar />
+                  <EditorToolbar />
+                  <QueryEditor />
+                </div>
+              </Panel>
+              {bottomPanelVisible && (
+                <>
+                  <Separator />
+                  <Panel defaultSize={40} minSize={15}>
+                    <ResultsPanel />
+                  </Panel>
+                </>
+              )}
+            </Group>
+          </Panel>
+        </Group>
+      </div>
+      <StatusBar />
+      <CommandPalette />
     </div>
   );
 };
-
-const Index = PlaceholderIndex;
 
 export default Index;
