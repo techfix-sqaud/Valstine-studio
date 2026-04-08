@@ -52,7 +52,7 @@ const Index = () => {
             </Panel>
             <Separator />
             <Panel defaultSize={80}>
-              <Group direction="vertical">
+              <Group orientation="vertical">
                 <Panel defaultSize={bottomPanelVisible ? 60 : 100} minSize={30}>
                   <div className="flex flex-col h-full">
                     <TabBar />
