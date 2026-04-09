@@ -1,9 +1,16 @@
+export type DBType = 'pg' | 'mysql' | 'sqlite' | 'mssql';
+
 export interface DBConnection {
   id: string;
   name: string;
+  type: DBType;
   host: string;
   port: number;
   database: string;
+  user?: string;
+  password?: string;
+  filename?: string; // for SQLite
+  ssl?: boolean;
   status: 'connected' | 'disconnected';
 }
 
@@ -41,9 +48,9 @@ export interface QueryResult {
 }
 
 export const mockConnections: DBConnection[] = [
-  { id: 'conn-1', name: 'Production DB', host: 'prod.db.example.com', port: 5432, database: 'app_production', status: 'connected' },
-  { id: 'conn-2', name: 'Staging DB', host: 'staging.db.example.com', port: 5432, database: 'app_staging', status: 'connected' },
-  { id: 'conn-3', name: 'Local Dev', host: 'localhost', port: 5432, database: 'app_dev', status: 'disconnected' },
+  { id: 'conn-1', name: 'Production DB', type: 'pg', host: 'prod.db.example.com', port: 5432, database: 'app_production', user: 'postgres', status: 'connected' },
+  { id: 'conn-2', name: 'Staging DB', type: 'mysql', host: 'staging.db.example.com', port: 3306, database: 'app_staging', user: 'root', status: 'connected' },
+  { id: 'conn-3', name: 'Local Dev', type: 'pg', host: 'localhost', port: 5432, database: 'app_dev', user: 'postgres', status: 'disconnected' },
 ];
 
 export const mockTables: Record<string, DBTable[]> = {

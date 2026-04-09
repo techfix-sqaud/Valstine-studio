@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { DBConnection, QueryTab, QueryResult, defaultTabs, mockQueryResult, mockConnections } from '@/lib/mock-data';
+import { DBConnection, QueryTab, QueryResult, defaultTabs } from '@/lib/mock-data';
+import * as api from '@/lib/api';
 
 export interface QueryHistoryEntry {
   id: string;
@@ -53,6 +54,10 @@ interface AppState {
   sidebarOpen: boolean;
   activeSidebarTab: 'explorer' | 'connections' | 'search' | 'ai';
 
+  // Connections
+  connections: DBConnection[];
+  activeConnectionId: string;
+
   // Tabs
   tabs: QueryTab[];
   activeTabId: string;
@@ -66,15 +71,16 @@ interface AppState {
   // Command palette
   commandPaletteOpen: boolean;
 
-  // Active connection
-  activeConnectionId: string;
-
   // Query history
   queryHistory: QueryHistoryEntry[];
 
   // AI chat
   aiMessages: AIChatMessage[];
   aiThinking: boolean;
+
+  // Connection dialog
+  connectionDialogOpen: boolean;
+  editingConnection: DBConnection | null;
 
   // Actions
   toggleTheme: () => void;
@@ -99,6 +105,15 @@ interface AppState {
   sendAiMessage: (prompt: string) => void;
   clearAiMessages: () => void;
   setSidebarOpen: (open: boolean) => void;
+
+  // Connection management
+  addConnection: (conn: DBConnection) => void;
+  removeConnection: (id: string) => void;
+  updateConnection: (conn: DBConnection) => void;
+  connectConnection: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  disconnectConnection: (id: string) => Promise<void>;
+  openConnectionDialog: (conn?: DBConnection) => void;
+  closeConnectionDialog: () => void;
 }
 
 function loadHistory(): QueryHistoryEntry[] {
@@ -114,6 +129,21 @@ function saveHistory(history: QueryHistoryEntry[]) {
   localStorage.setItem('db-studio-history', JSON.stringify(history.slice(0, 200)));
 }
 
+function loadConnections(): DBConnection[] {
+  try {
+    const raw = localStorage.getItem('db-studio-connections');
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveConnections(conns: DBConnection[]) {
+  // Strip passwords before saving in localStorage for basic safety – user re-enters on connect
+  const safe = conns.map(c => ({ ...c, password: '' }));
+  localStorage.setItem('db-studio-connections', JSON.stringify(safe));
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   theme: (typeof window !== 'undefined' && localStorage.getItem('db-studio-theme') as 'light' | 'dark') || 'dark',
   isFirstTime: typeof window !== 'undefined' ? !localStorage.getItem('db-studio-onboarded') : true,
@@ -121,6 +151,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   sidebarWidth: 260,
   sidebarOpen: true,
   activeSidebarTab: 'explorer',
+  connections: loadConnections(),
+  activeConnectionId: '',
   tabs: defaultTabs,
   activeTabId: 'tab-1',
   bottomPanelVisible: true,
@@ -128,8 +160,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   queryResult: null,
   isExecuting: false,
   commandPaletteOpen: false,
-  activeConnectionId: 'conn-1',
   queryHistory: loadHistory(),
+  connectionDialogOpen: false,
+  editingConnection: null,
   aiMessages: [
     {
       id: 'ai-welcome',
@@ -162,30 +195,70 @@ export const useAppStore = create<AppState>((set, get) => ({
   })),
   setBottomPanelVisible: (v) => set({ bottomPanelVisible: v }),
   setActiveBottomTab: (tab) => set({ activeBottomTab: tab, bottomPanelVisible: true }),
-  executeQuery: () => {
+  executeQuery: async () => {
     const state = get();
     const activeTab = state.tabs.find((t) => t.id === state.activeTabId);
     const queryText = activeTab?.content ?? '';
     const connId = state.activeConnectionId;
-    const conn = mockConnections.find((c) => c.id === connId);
+    const conn = state.connections.find((c) => c.id === connId);
 
-    set({ isExecuting: true, bottomPanelVisible: true, activeBottomTab: 'results' });
+    if (!queryText.trim()) return;
+    if (!conn) {
+      set({
+        queryResult: { columns: [], rows: [], rowCount: 0, executionTime: 0, status: 'error', message: 'No active connection. Please connect to a database first.' },
+        bottomPanelVisible: true,
+        activeBottomTab: 'results',
+      });
+      return;
+    }
 
-    setTimeout(() => {
+    set({ isExecuting: true, bottomPanelVisible: true, activeBottomTab: 'results', queryResult: null });
+
+    const start = performance.now();
+    try {
+      const result: QueryResult = await api.executeQuery(conn, queryText);
+      const elapsed = Math.round(performance.now() - start);
+      if (!result.executionTime) result.executionTime = elapsed;
+
       const entry: QueryHistoryEntry = {
         id: `hist-${Date.now()}`,
         query: queryText.trim(),
         connectionId: connId,
-        connectionName: conn?.name ?? 'Unknown',
+        connectionName: conn.name,
         executedAt: new Date().toISOString(),
-        executionTime: mockQueryResult.executionTime,
-        rowCount: mockQueryResult.rowCount,
-        status: 'success',
+        executionTime: result.executionTime,
+        rowCount: result.rowCount,
+        status: result.status,
+        errorMessage: result.message,
       };
       const newHistory = [entry, ...get().queryHistory].slice(0, 200);
       saveHistory(newHistory);
-      set({ queryResult: mockQueryResult, isExecuting: false, queryHistory: newHistory });
-    }, 400 + Math.random() * 300);
+      set({ queryResult: result, isExecuting: false, queryHistory: newHistory });
+    } catch (err: any) {
+      const elapsed = Math.round(performance.now() - start);
+      const errorResult: QueryResult = {
+        columns: [],
+        rows: [],
+        rowCount: 0,
+        executionTime: elapsed,
+        status: 'error',
+        message: err.message ?? 'Failed to connect to query server. Is the server running?',
+      };
+      const entry: QueryHistoryEntry = {
+        id: `hist-${Date.now()}`,
+        query: queryText.trim(),
+        connectionId: connId,
+        connectionName: conn.name,
+        executedAt: new Date().toISOString(),
+        executionTime: elapsed,
+        rowCount: 0,
+        status: 'error',
+        errorMessage: errorResult.message,
+      };
+      const newHistory = [entry, ...get().queryHistory].slice(0, 200);
+      saveHistory(newHistory);
+      set({ queryResult: errorResult, isExecuting: false, queryHistory: newHistory });
+    }
   },
   toggleCommandPalette: () => set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })),
   setActiveConnection: (id) => set({ activeConnectionId: id }),
@@ -194,7 +267,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (existing) {
       return { activeTabId: existing.id };
     }
-    const conn = mockConnections.find((c) => c.id === s.activeConnectionId);
+    const conn = s.connections.find((c) => c.id === s.activeConnectionId);
     const tab: QueryTab = {
       id: `schema-${s.activeConnectionId}-${Date.now()}`,
       title: `Schema: ${conn?.name ?? 'Unknown'}`,
@@ -279,4 +352,44 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeTabId: id,
     });
   },
+
+  // ── Connection management ──
+  addConnection: (conn) => {
+    const newConns = [...get().connections, conn];
+    saveConnections(newConns);
+    set({ connections: newConns, activeConnectionId: conn.id, connectionDialogOpen: false, editingConnection: null });
+  },
+  removeConnection: (id) => {
+    const newConns = get().connections.filter((c) => c.id !== id);
+    saveConnections(newConns);
+    const newActive = get().activeConnectionId === id ? (newConns[0]?.id ?? '') : get().activeConnectionId;
+    set({ connections: newConns, activeConnectionId: newActive });
+  },
+  updateConnection: (conn) => {
+    const newConns = get().connections.map((c) => c.id === conn.id ? conn : c);
+    saveConnections(newConns);
+    set({ connections: newConns, connectionDialogOpen: false, editingConnection: null });
+  },
+  connectConnection: async (id) => {
+    const conn = get().connections.find((c) => c.id === id);
+    if (!conn) return { ok: false, error: 'Connection not found' };
+    const result = await api.testConnection(conn);
+    if (result.ok) {
+      const newConns = get().connections.map((c) => c.id === id ? { ...c, status: 'connected' as const } : c);
+      saveConnections(newConns);
+      set({ connections: newConns, activeConnectionId: id });
+    }
+    return result;
+  },
+  disconnectConnection: async (id) => {
+    const conn = get().connections.find((c) => c.id === id);
+    if (conn) {
+      await api.disconnectConnection(conn).catch(() => {});
+      const newConns = get().connections.map((c) => c.id === id ? { ...c, status: 'disconnected' as const } : c);
+      saveConnections(newConns);
+      set({ connections: newConns });
+    }
+  },
+  openConnectionDialog: (conn) => set({ connectionDialogOpen: true, editingConnection: conn ?? null }),
+  closeConnectionDialog: () => set({ connectionDialogOpen: false, editingConnection: null }),
 }));

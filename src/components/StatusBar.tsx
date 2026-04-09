@@ -1,10 +1,11 @@
 import { GitBranch, Database, Wifi } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
-import { mockConnections } from "@/lib/mock-data";
+import { DB_TYPE_META } from "@/lib/api";
 
 export function StatusBar() {
-  const { activeConnectionId, tabs, activeTabId } = useAppStore();
-  const conn = mockConnections.find((c) => c.id === activeConnectionId);
+  const { activeConnectionId, tabs, activeTabId, connections } = useAppStore();
+  const conn = connections.find((c) => c.id === activeConnectionId);
+  const dbLabel = conn ? (DB_TYPE_META[conn.type]?.label ?? conn.type) : null;
 
   return (
     <div className="h-6 bg-statusbar flex items-center justify-between px-2 text-statusbar-foreground text-[11px] shrink-0 select-none overflow-hidden">
@@ -17,7 +18,7 @@ export function StatusBar() {
         </div>
         <div className="hidden sm:flex items-center gap-1">
           <Wifi className="w-3 h-3" />
-          <span>PostgreSQL 16</span>
+          <span>{conn?.status === "connected" ? dbLabel : "Disconnected"}</span>
         </div>
       </div>
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">

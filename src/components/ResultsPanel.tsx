@@ -37,6 +37,25 @@ function ResultsTable() {
     );
   }
 
+  if (queryResult.status === "error") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-2 p-4">
+        <div className="flex items-center gap-2 text-destructive text-sm font-medium">
+          <AlertTriangle className="w-4 h-4" />
+          Query Error
+        </div>
+        <pre className="max-w-[90%] text-xs text-destructive/90 bg-destructive/10 border border-destructive/20 rounded-md p-3 whitespace-pre-wrap break-words font-mono">
+          {queryResult.message ?? "Unknown error"}
+        </pre>
+        {queryResult.executionTime > 0 && (
+          <span className="text-[11px] text-muted-foreground">
+            Failed after {queryResult.executionTime}ms
+          </span>
+        )}
+      </div>
+    );
+  }
+
   const handleCopy = () => {
     const csv = [
       queryResult.columns.join("\t"),

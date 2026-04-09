@@ -1,11 +1,15 @@
 import { Play, Sparkles, StopCircle, Database } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
-import { mockConnections } from "@/lib/mock-data";
 
 export function EditorToolbar() {
-  const { executeQuery, isExecuting, activeConnectionId, openAiSidebar } =
-    useAppStore();
-  const conn = mockConnections.find((c) => c.id === activeConnectionId);
+  const {
+    executeQuery,
+    isExecuting,
+    activeConnectionId,
+    openAiSidebar,
+    connections,
+  } = useAppStore();
+  const conn = connections.find((c) => c.id === activeConnectionId);
 
   return (
     <div className="h-8 bg-panel-bg border-b border-panel-border flex items-center px-1.5 sm:px-2 gap-1 shrink-0 overflow-x-auto">

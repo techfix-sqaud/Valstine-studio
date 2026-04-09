@@ -235,6 +235,69 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* Supported Databases */}
+      <section className="py-16 sm:py-24 border-t border-border bg-secondary/10">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 sm:mb-16">
+            <h2 className="text-xl sm:text-2xl md:text-3xl font-bold mb-3 sm:mb-4">
+              Connect to Any Database
+            </h2>
+            <p className="text-sm sm:text-base text-muted-foreground max-w-lg mx-auto">
+              First-class support for the most popular relational databases.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 max-w-3xl mx-auto">
+            {[
+              {
+                name: "PostgreSQL",
+                icon: "🐘",
+                color: "text-blue-400",
+                bg: "bg-blue-500/10",
+                desc: "Full support including schemas, extensions, and advanced types",
+              },
+              {
+                name: "MySQL",
+                icon: "🐬",
+                color: "text-orange-400",
+                bg: "bg-orange-500/10",
+                desc: "Complete MySQL & MariaDB compatibility with all features",
+              },
+              {
+                name: "SQLite",
+                icon: "📁",
+                color: "text-emerald-400",
+                bg: "bg-emerald-500/10",
+                desc: "Open local .db files directly with zero configuration",
+              },
+              {
+                name: "SQL Server",
+                icon: "🔷",
+                color: "text-red-400",
+                bg: "bg-red-500/10",
+                desc: "Microsoft SQL Server with Windows & SQL authentication",
+              },
+            ].map((db) => (
+              <div
+                key={db.name}
+                className="group flex flex-col items-center gap-3 p-5 sm:p-6 rounded-xl border border-border bg-card hover:border-primary/30 hover:shadow-lg transition-all text-center"
+              >
+                <div
+                  className={`w-14 h-14 rounded-xl ${db.bg} flex items-center justify-center text-2xl group-hover:scale-110 transition-transform`}
+                >
+                  {db.icon}
+                </div>
+                <div className={`font-semibold text-sm ${db.color}`}>
+                  {db.name}
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed hidden sm:block">
+                  {db.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Platforms */}
       <section className="py-16 sm:py-24 border-t border-border bg-secondary/20">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">

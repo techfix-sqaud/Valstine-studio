@@ -9,6 +9,7 @@ import { ResultsPanel } from "@/components/ResultsPanel";
 import { SchemaVisualization } from "@/components/SchemaVisualization";
 import { StatusBar } from "@/components/StatusBar";
 import { CommandPalette } from "@/components/CommandPalette";
+import { ConnectionDialog } from "@/components/ConnectionDialog";
 import { ContextMenuProvider } from "@/components/ContextMenu";
 import { useAppStore } from "@/store/app-store";
 import { useEffect } from "react";
@@ -137,6 +138,7 @@ const Index = () => {
         </div>
         <StatusBar />
         <CommandPalette />
+        <ConnectionDialog />
       </div>
     </ContextMenuProvider>
   );
