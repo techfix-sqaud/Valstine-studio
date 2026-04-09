@@ -52,7 +52,7 @@ interface AppState {
   // Sidebar
   sidebarWidth: number;
   sidebarOpen: boolean;
-  activeSidebarTab: 'explorer' | 'connections' | 'search' | 'ai';
+  activeSidebarTab: 'explorer' | 'connections' | 'search' | 'ai' | 'schema-compare' | 'git';
 
   // Connections
   connections: DBConnection[];
@@ -85,7 +85,7 @@ interface AppState {
   // Actions
   toggleTheme: () => void;
   toggleSidebar: () => void;
-  setActiveSidebarTab: (tab: 'explorer' | 'connections' | 'search' | 'ai') => void;
+  setActiveSidebarTab: (tab: 'explorer' | 'connections' | 'search' | 'ai' | 'schema-compare' | 'git') => void;
   setActiveTab: (id: string) => void;
   addTab: (tab: QueryTab) => void;
   closeTab: (id: string) => void;
@@ -112,6 +112,7 @@ interface AppState {
   updateConnection: (conn: DBConnection) => void;
   connectConnection: (id: string) => Promise<{ ok: boolean; error?: string }>;
   disconnectConnection: (id: string) => Promise<void>;
+  switchDatabase: (dbName: string) => Promise<void>;
   openConnectionDialog: (conn?: DBConnection) => void;
   closeConnectionDialog: () => void;
 }
@@ -392,4 +393,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   openConnectionDialog: (conn) => set({ connectionDialogOpen: true, editingConnection: conn ?? null }),
   closeConnectionDialog: () => set({ connectionDialogOpen: false, editingConnection: null }),
+
+  switchDatabase: async (dbName) => {
+    const conn = get().connections.find((c) => c.id === get().activeConnectionId);
+    if (!conn || conn.database === dbName) return;
+    // Disconnect old knex pool so a new one is created with the new DB
+    await api.disconnectConnection(conn).catch(() => {});
+    const updated: DBConnection = { ...conn, database: dbName, status: 'connected' as const };
+    const newConns = get().connections.map((c) => c.id === conn.id ? updated : c);
+    saveConnections(newConns);
+    set({ connections: newConns });
+    // Verify the new connection works
+    const result = await api.testConnection(updated);
+    if (!result.ok) {
+      // Mark as disconnected if it failed
+      const conns2 = get().connections.map((c) => c.id === conn.id ? { ...c, database: dbName, status: 'disconnected' as const } : c);
+      saveConnections(conns2);
+      set({ connections: conns2 });
+    }
+  },
 }));

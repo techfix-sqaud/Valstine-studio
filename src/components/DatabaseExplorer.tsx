@@ -368,42 +368,247 @@ function SchemaGroup({
   );
 }
 
+// ── Database node ──
+function DatabaseNode({
+  dbName,
+  isActive,
+  onSwitch,
+}: {
+  dbName: string;
+  isActive: boolean;
+  onSwitch: (name: string) => void;
+}) {
+  const [open, setOpen] = useState(isActive);
+  const [schemas, setSchemas] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const conn = useAppStore((s) =>
+    s.connections.find((c) => c.id === s.activeConnectionId),
+  );
+
+  // Single effect: fetch schemas whenever this node is active + open
+  // Uses a counter to avoid stale closure issues
+  const [fetchKey, setFetchKey] = useState(0);
+
+  useEffect(() => {
+    if (!isActive || !open || !conn) {
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    api
+      .fetchSchemas(conn)
+      .then((s) => {
+        if (!cancelled) {
+          setSchemas(s);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSchemas([]);
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isActive, open, conn?.id, conn?.database, conn?.status, fetchKey]);
+
+  // Auto-expand when becoming active
+  useEffect(() => {
+    if (isActive) setOpen(true);
+  }, [isActive]);
+
+  const refresh = () => setFetchKey((k) => k + 1);
+
+  const handleClick = () => {
+    if (!isActive) {
+      onSwitch(dbName);
+    } else {
+      setOpen(!open);
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    showContextMenu(e, [
+      {
+        label: isActive ? "Current Database" : "Switch to This Database",
+        disabled: isActive,
+        action: () => onSwitch(dbName),
+      },
+      {
+        label: "Refresh",
+        action: refresh,
+      },
+      { separator: true, label: "sep" },
+      {
+        label: "New Query",
+        action: () => {
+          const store = useAppStore.getState();
+          store.addTab({
+            id: `tab-${Date.now()}`,
+            title: `query_${dbName}.sql`,
+            content: `-- Database: ${dbName}\nSELECT 1;`,
+            connectionId: store.activeConnectionId,
+            isDirty: false,
+          });
+        },
+      },
+      {
+        label: "Create Schema...",
+        action: async () => {
+          if (!isActive) {
+            alert("Switch to this database first");
+            return;
+          }
+          const name = prompt("Enter new schema name:");
+          if (!name?.trim() || !conn) return;
+          const r = await api.createSchema(conn, name.trim());
+          if (r.ok) refresh();
+          else alert(r.error ?? "Failed to create schema");
+        },
+      },
+      { separator: true, label: "sep2" },
+      {
+        label: "Drop Database",
+        danger: true,
+        action: async () => {
+          if (isActive) {
+            alert(
+              "Cannot drop the currently active database. Switch to another database first.",
+            );
+            return;
+          }
+          if (
+            !conn ||
+            !confirm(`Are you sure you want to DROP database "${dbName}"?`)
+          )
+            return;
+          const r = await api.dropDatabase(conn, dbName);
+          if (!r.ok) alert(r.error ?? "Failed to drop database");
+        },
+      },
+    ]);
+  };
+
+  return (
+    <div>
+      <button
+        onClick={handleClick}
+        onContextMenu={handleContextMenu}
+        className={cn(
+          "tree-item flex items-center gap-1.5 py-1 px-2 pl-3 w-full text-left text-xs rounded-sm",
+          isActive && "bg-accent/50",
+        )}
+      >
+        {open ? (
+          <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
+        ) : (
+          <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+        )}
+        <Database
+          className={cn(
+            "w-3.5 h-3.5 shrink-0",
+            isActive ? "text-success" : "text-muted-foreground",
+          )}
+        />
+        <span
+          className={cn(
+            "truncate",
+            isActive ? "text-foreground font-medium" : "text-foreground/70",
+          )}
+        >
+          {dbName}
+        </span>
+        {isActive && (
+          <span className="text-[9px] px-1 py-0.5 rounded bg-success/15 text-success ml-auto shrink-0">
+            active
+          </span>
+        )}
+        {loading && (
+          <Loader2 className="w-3 h-3 text-muted-foreground ml-auto animate-spin shrink-0" />
+        )}
+      </button>
+      {open && isActive && (
+        <div>
+          {loading && schemas.length === 0 && (
+            <div className="flex items-center gap-2 py-2 pl-8 text-[10px] text-muted-foreground">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Loading schemas...
+            </div>
+          )}
+          {schemas.map((schema, i) => (
+            <SchemaGroup key={schema} schema={schema} defaultOpen={i === 0} />
+          ))}
+          {!loading && schemas.length === 0 && (
+            <div className="pl-8 py-1 text-[10px] text-muted-foreground italic">
+              No schemas
+            </div>
+          )}
+        </div>
+      )}
+      {open && !isActive && (
+        <div className="pl-8 py-1.5 text-[10px] text-muted-foreground italic">
+          Click to switch to this database
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Explorer ──
 export function DatabaseExplorer() {
   const activeConnectionId = useAppStore((s) => s.activeConnectionId);
   const conn = useAppStore((s) =>
     s.connections.find((c) => c.id === s.activeConnectionId),
   );
-  const [schemas, setSchemas] = useState<string[]>([]);
+  const switchDatabase = useAppStore((s) => s.switchDatabase);
+  const [databases, setDatabases] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const refreshSchemas = useCallback(async () => {
-    if (!conn || conn.status !== "connected") {
-      setSchemas([]);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const s = await api.fetchSchemas(conn);
-      setSchemas(s);
-    } catch (e: any) {
-      setError(e.message ?? "Failed to load schemas");
-    }
-    setLoading(false);
-  }, [conn]);
+  const [fetchKey, setFetchKey] = useState(0);
 
   useEffect(() => {
-    refreshSchemas();
-  }, [activeConnectionId, conn?.status, refreshSchemas]);
+    if (!conn || conn.status !== "connected") {
+      setDatabases([]);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api
+      .fetchDatabases(conn)
+      .then((dbs) => {
+        if (!cancelled) {
+          setDatabases(dbs);
+          setLoading(false);
+        }
+      })
+      .catch((e: any) => {
+        if (!cancelled) {
+          setError(e.message ?? "Failed to load databases");
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeConnectionId, conn?.status, conn?.database, fetchKey]);
+
+  const handleSwitchDb = async (dbName: string) => {
+    if (conn?.database === dbName) return;
+    await switchDatabase(dbName);
+    // refreshDatabases will fire automatically via the useEffect
+    // when conn.database changes, but force a re-fetch just in case
+    setFetchKey((k) => k + 1);
+  };
 
   const handleTitleContextMenu = (e: React.MouseEvent) => {
     if (!conn) return;
     showContextMenu(e, [
       {
         label: "Refresh",
-        action: refreshSchemas,
+        action: () => setFetchKey((k) => k + 1),
       },
       { separator: true, label: "sep" },
       {
@@ -412,17 +617,8 @@ export function DatabaseExplorer() {
           const name = prompt("Enter new database name:");
           if (!name?.trim() || !conn) return;
           const r = await api.createDatabase(conn, name.trim());
-          if (!r.ok) alert(r.error ?? "Failed to create database");
-        },
-      },
-      {
-        label: "Create Schema...",
-        action: async () => {
-          const name = prompt("Enter new schema name:");
-          if (!name?.trim() || !conn) return;
-          const r = await api.createSchema(conn, name.trim());
-          if (r.ok) refreshSchemas();
-          else alert(r.error ?? "Failed to create schema");
+          if (r.ok) setFetchKey((k) => k + 1);
+          else alert(r.error ?? "Failed to create database");
         },
       },
       { separator: true, label: "sep2" },
@@ -470,7 +666,7 @@ export function DatabaseExplorer() {
       <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
         <span>Explorer</span>
         <button
-          onClick={refreshSchemas}
+          onClick={() => setFetchKey((k) => k + 1)}
           className="p-0.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
           title="Refresh"
         >
@@ -520,18 +716,23 @@ export function DatabaseExplorer() {
       {/* Tree */}
       {conn.status === "connected" && (
         <div className="flex-1 overflow-y-auto py-1">
-          {loading && schemas.length === 0 && (
+          {loading && databases.length === 0 && (
             <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted-foreground">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              Loading...
+              Loading databases...
             </div>
           )}
-          {schemas.map((schema, i) => (
-            <SchemaGroup key={schema} schema={schema} defaultOpen={i === 0} />
+          {databases.map((dbName) => (
+            <DatabaseNode
+              key={dbName}
+              dbName={dbName}
+              isActive={dbName === conn.database}
+              onSwitch={handleSwitchDb}
+            />
           ))}
-          {!loading && schemas.length === 0 && !error && (
+          {!loading && databases.length === 0 && !error && (
             <div className="px-3 py-4 text-xs text-muted-foreground text-center">
-              No schemas found
+              No databases found
             </div>
           )}
         </div>

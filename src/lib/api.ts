@@ -27,11 +27,16 @@ async function post<T = any>(path: string, body: unknown): Promise<T> {
   }
   const text = await res.text();
   if (!text) throw new Error(`Server returned empty response (HTTP ${res.status})`);
+  let parsed: any;
   try {
-    return JSON.parse(text);
+    parsed = JSON.parse(text);
   } catch {
     throw new Error(`Server returned invalid JSON (HTTP ${res.status}): ${text.slice(0, 200)}`);
   }
+  if (!res.ok && parsed.error) {
+    throw new Error(parsed.error);
+  }
+  return parsed;
 }
 
 export async function testConnection(conn: DBConnection): Promise<{ ok: boolean; error?: string }> {
@@ -103,6 +108,114 @@ export async function truncateTable(conn: DBConnection, table: string, schema?: 
 
 export async function createSchema(conn: DBConnection, name: string): Promise<{ ok: boolean; error?: string }> {
   return post('/api/create-schema', { connection: toPayload(conn), name });
+}
+
+// ─── Schema comparison ───
+
+export interface SchemaDiffEntry {
+  type: 'table_added' | 'table_removed' | 'column_added' | 'column_removed' | 'column_changed';
+  schema: string;
+  table: string;
+  column?: string;
+  details?: string;
+  migrationUp?: string;
+  migrationDown?: string;
+}
+
+export interface SchemaDiffResult {
+  ok: boolean;
+  diffs: SchemaDiffEntry[];
+  migrationUp: string;
+  migrationDown: string;
+  source: string;
+  target: string;
+  error?: string;
+}
+
+export async function schemaDiff(
+  source: DBConnection,
+  target: DBConnection,
+  sourceSchema?: string,
+  targetSchema?: string,
+): Promise<SchemaDiffResult> {
+  return post('/api/schema-diff', {
+    source: toPayload(source),
+    target: toPayload(target),
+    sourceSchema,
+    targetSchema,
+  });
+}
+
+// ─── Git ───
+
+async function get<T = any>(path: string): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(path);
+  } catch {
+    throw new Error('Cannot reach the server. Is the backend running?');
+  }
+  const text = await res.text();
+  if (!text) throw new Error(`Server returned empty response (HTTP ${res.status})`);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Server returned invalid JSON (HTTP ${res.status}): ${text.slice(0, 200)}`);
+  }
+}
+
+export interface GitFileStatus {
+  status: string;
+  path: string;
+}
+
+export interface GitStatus {
+  ok: boolean;
+  branch: string;
+  files: GitFileStatus[];
+  ahead: number;
+  behind: number;
+  error?: string;
+}
+
+export async function gitStatus(): Promise<GitStatus> {
+  return get('/api/git/status');
+}
+
+export async function gitBranches(): Promise<{ ok: boolean; branches: string[]; current: string; error?: string }> {
+  return get('/api/git/branches');
+}
+
+export async function gitDiff(file?: string): Promise<{ ok: boolean; diff: string; stagedDiff: string; error?: string }> {
+  return post('/api/git/diff', { file });
+}
+
+export async function gitStage(files: string[]): Promise<{ ok: boolean; error?: string }> {
+  return post('/api/git/stage', { files });
+}
+
+export async function gitUnstage(files: string[]): Promise<{ ok: boolean; error?: string }> {
+  return post('/api/git/unstage', { files });
+}
+
+export async function gitCommit(message: string): Promise<{ ok: boolean; result?: string; error?: string }> {
+  return post('/api/git/commit', { message });
+}
+
+export async function gitPush(branch?: string, setUpstream?: boolean): Promise<{ ok: boolean; result?: string; error?: string }> {
+  return post('/api/git/push', { branch, setUpstream });
+}
+
+export async function gitCheckout(branch: string, create?: boolean): Promise<{ ok: boolean; result?: string; error?: string }> {
+  return post('/api/git/checkout', { branch, create });
+}
+
+export async function gitCreatePR(title: string, body?: string, base?: string): Promise<{ ok: boolean; prUrl?: string; branch?: string; error?: string }> {
+  return post('/api/git/create-pr', { title, body, base });
+}
+
+export async function gitLog(limit?: number): Promise<{ ok: boolean; commits: { hash: string; message: string; author: string; date: string }[]; error?: string }> {
+  return post('/api/git/log', { limit });
 }
 
 export const DB_TYPE_META: Record<DBType, { label: string; defaultPort: number; icon: string; color: string }> = {

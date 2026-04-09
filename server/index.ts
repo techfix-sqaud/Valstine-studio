@@ -379,6 +379,153 @@ async function getRowCount(c: ConnectionPayload, tableName: string, schema?: str
   }
 }
 
+// ───── Schema snapshot (for comparison) ─────
+interface SchemaSnapshot {
+  database: string;
+  tables: {
+    schema: string;
+    name: string;
+    columns: { name: string; type: string; nullable: boolean; primaryKey: boolean; defaultValue: string | null }[];
+  }[];
+}
+
+async function snapshotSchema(c: ConnectionPayload, onlySchema?: string): Promise<SchemaSnapshot> {
+  const schemas = onlySchema ? [onlySchema] : await listSchemas(c);
+  const tables: SchemaSnapshot["tables"] = [];
+  for (const schema of schemas) {
+    const tbls = await listTables(c, schema);
+    for (const t of tbls) {
+      if (t.type !== "table") continue;
+      const cols = await listColumns(c, t.name, schema);
+      tables.push({ schema, name: t.name, columns: cols });
+    }
+  }
+  return { database: c.database, tables };
+}
+
+interface SchemaDiffEntry {
+  type: "table_added" | "table_removed" | "column_added" | "column_removed" | "column_changed";
+  schema: string;
+  table: string;
+  column?: string;
+  details?: string;
+  migrationUp?: string;
+  migrationDown?: string;
+}
+
+function diffSnapshots(source: SchemaSnapshot, target: SchemaSnapshot): SchemaDiffEntry[] {
+  const diffs: SchemaDiffEntry[] = [];
+  const srcMap = new Map(source.tables.map((t) => [`${t.schema}.${t.name}`, t]));
+  const tgtMap = new Map(target.tables.map((t) => [`${t.schema}.${t.name}`, t]));
+
+  // Tables in target but not in source → added
+  for (const [key, t] of tgtMap) {
+    if (!srcMap.has(key)) {
+      const colDefs = t.columns.map((c) => `  "${c.name}" ${c.type}${c.primaryKey ? " PRIMARY KEY" : ""}${c.nullable ? "" : " NOT NULL"}`).join(",\n");
+      diffs.push({
+        type: "table_added",
+        schema: t.schema,
+        table: t.name,
+        migrationUp: `CREATE TABLE "${t.schema}"."${t.name}" (\n${colDefs}\n);`,
+        migrationDown: `DROP TABLE IF EXISTS "${t.schema}"."${t.name}";`,
+      });
+    }
+  }
+
+  // Tables in source but not in target → removed
+  for (const [key, t] of srcMap) {
+    if (!tgtMap.has(key)) {
+      const colDefs = t.columns.map((c) => `  "${c.name}" ${c.type}${c.primaryKey ? " PRIMARY KEY" : ""}${c.nullable ? "" : " NOT NULL"}`).join(",\n");
+      diffs.push({
+        type: "table_removed",
+        schema: t.schema,
+        table: t.name,
+        migrationUp: `DROP TABLE IF EXISTS "${t.schema}"."${t.name}";`,
+        migrationDown: `CREATE TABLE "${t.schema}"."${t.name}" (\n${colDefs}\n);`,
+      });
+    }
+  }
+
+  // Tables in both → compare columns
+  for (const [key, srcTable] of srcMap) {
+    const tgtTable = tgtMap.get(key);
+    if (!tgtTable) continue;
+
+    const srcCols = new Map(srcTable.columns.map((c) => [c.name, c]));
+    const tgtCols = new Map(tgtTable.columns.map((c) => [c.name, c]));
+    const qualified = `"${srcTable.schema}"."${srcTable.name}"`;
+
+    for (const [colName, col] of tgtCols) {
+      if (!srcCols.has(colName)) {
+        diffs.push({
+          type: "column_added",
+          schema: srcTable.schema,
+          table: srcTable.name,
+          column: colName,
+          details: `${col.type}${col.nullable ? " NULL" : " NOT NULL"}`,
+          migrationUp: `ALTER TABLE ${qualified} ADD COLUMN "${colName}" ${col.type}${col.nullable ? "" : " NOT NULL"};`,
+          migrationDown: `ALTER TABLE ${qualified} DROP COLUMN "${colName}";`,
+        });
+      }
+    }
+
+    for (const [colName, col] of srcCols) {
+      if (!tgtCols.has(colName)) {
+        diffs.push({
+          type: "column_removed",
+          schema: srcTable.schema,
+          table: srcTable.name,
+          column: colName,
+          details: `${col.type}`,
+          migrationUp: `ALTER TABLE ${qualified} DROP COLUMN "${colName}";`,
+          migrationDown: `ALTER TABLE ${qualified} ADD COLUMN "${colName}" ${col.type}${col.nullable ? "" : " NOT NULL"};`,
+        });
+      }
+    }
+
+    for (const [colName, srcCol] of srcCols) {
+      const tgtCol = tgtCols.get(colName);
+      if (!tgtCol) continue;
+      const changes: string[] = [];
+      if (srcCol.type !== tgtCol.type) changes.push(`type: ${srcCol.type} → ${tgtCol.type}`);
+      if (srcCol.nullable !== tgtCol.nullable) changes.push(`nullable: ${srcCol.nullable} → ${tgtCol.nullable}`);
+      if (changes.length > 0) {
+        diffs.push({
+          type: "column_changed",
+          schema: srcTable.schema,
+          table: srcTable.name,
+          column: colName,
+          details: changes.join(", "),
+          migrationUp: `ALTER TABLE ${qualified} ALTER COLUMN "${colName}" TYPE ${tgtCol.type}${tgtCol.nullable ? "" : `, ALTER COLUMN "${colName}" SET NOT NULL`};`,
+          migrationDown: `ALTER TABLE ${qualified} ALTER COLUMN "${colName}" TYPE ${srcCol.type}${srcCol.nullable ? "" : `, ALTER COLUMN "${colName}" SET NOT NULL`};`,
+        });
+      }
+    }
+  }
+
+  return diffs;
+}
+
+// ───── Git helpers ─────
+import { execSync } from "child_process";
+
+function git(args: string, cwd?: string): string {
+  try {
+    return execSync(`git ${args}`, { cwd: cwd ?? process.cwd(), encoding: "utf-8", timeout: 15000 }).trim();
+  } catch (e: any) {
+    throw new Error(e.stderr?.trim() ?? e.message);
+  }
+}
+
+function isGitRepo(cwd?: string): boolean {
+  try {
+    git("rev-parse --is-inside-work-tree", cwd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ───── Server ─────
 
 Bun.serve({
@@ -509,6 +656,171 @@ Bun.serve({
         else if (connection.type === "mssql") await db.raw(`CREATE SCHEMA [${name}]`);
         else return json({ ok: false, error: "Not supported for this database type" });
         return json({ ok: true });
+      }
+
+      // POST /api/schema-snapshot
+      if (req.method === "POST" && url.pathname === "/api/schema-snapshot") {
+        const { connection } = (await req.json()) as { connection: ConnectionPayload };
+        const snapshot = await snapshotSchema(connection);
+        return json({ ok: true, snapshot });
+      }
+
+      // POST /api/schema-diff
+      if (req.method === "POST" && url.pathname === "/api/schema-diff") {
+        const { source, target, sourceSchema, targetSchema } = (await req.json()) as {
+          source: ConnectionPayload;
+          target: ConnectionPayload;
+          sourceSchema?: string;
+          targetSchema?: string;
+        };
+        const [srcSnap, tgtSnap] = await Promise.all([
+          snapshotSchema(source, sourceSchema),
+          snapshotSchema(target, targetSchema),
+        ]);
+        const diffs = diffSnapshots(srcSnap, tgtSnap);
+        const migrationUp = diffs.map((d) => d.migrationUp).filter(Boolean).join("\n\n");
+        const migrationDown = diffs.map((d) => d.migrationDown).filter(Boolean).join("\n\n");
+        const srcLabel = sourceSchema ? `${srcSnap.database}.${sourceSchema}` : srcSnap.database;
+        const tgtLabel = targetSchema ? `${tgtSnap.database}.${targetSchema}` : tgtSnap.database;
+        return json({ ok: true, diffs, migrationUp, migrationDown, source: srcLabel, target: tgtLabel });
+      }
+
+      // ─── Git endpoints ───
+
+      // GET /api/git/status
+      if (req.method === "GET" && url.pathname === "/api/git/status") {
+        if (!isGitRepo()) return json({ ok: false, error: "Not a git repository" });
+        const branch = git("rev-parse --abbrev-ref HEAD");
+        const statusRaw = git("status --porcelain");
+        const files = statusRaw
+          ? statusRaw.split("\n").map((line) => ({
+              status: line.substring(0, 2).trim(),
+              path: line.substring(3),
+            }))
+          : [];
+        let ahead = 0,
+          behind = 0;
+        try {
+          const ab = git("rev-list --left-right --count HEAD...@{u}");
+          const parts = ab.split(/\s+/);
+          ahead = parseInt(parts[0]) || 0;
+          behind = parseInt(parts[1]) || 0;
+        } catch {}
+        return json({ ok: true, branch, files, ahead, behind });
+      }
+
+      // GET /api/git/branches
+      if (req.method === "GET" && url.pathname === "/api/git/branches") {
+        if (!isGitRepo()) return json({ ok: false, error: "Not a git repository" });
+        const raw = git("branch -a --no-color");
+        const current = git("rev-parse --abbrev-ref HEAD");
+        const branches = raw
+          .split("\n")
+          .map((b) => b.replace(/^\*?\s+/, "").trim())
+          .filter(Boolean);
+        return json({ ok: true, branches, current });
+      }
+
+      // POST /api/git/diff
+      if (req.method === "POST" && url.pathname === "/api/git/diff") {
+        if (!isGitRepo()) return json({ ok: false, error: "Not a git repository" });
+        const { file } = (await req.json()) as { file?: string };
+        const diff = file ? git(`diff -- "${file}"`) : git("diff");
+        const stagedDiff = file ? git(`diff --cached -- "${file}"`) : git("diff --cached");
+        return json({ ok: true, diff, stagedDiff });
+      }
+
+      // POST /api/git/stage
+      if (req.method === "POST" && url.pathname === "/api/git/stage") {
+        if (!isGitRepo()) return json({ ok: false, error: "Not a git repository" });
+        const { files } = (await req.json()) as { files: string[] };
+        for (const f of files) git(`add -- "${f}"`);
+        return json({ ok: true });
+      }
+
+      // POST /api/git/unstage
+      if (req.method === "POST" && url.pathname === "/api/git/unstage") {
+        if (!isGitRepo()) return json({ ok: false, error: "Not a git repository" });
+        const { files } = (await req.json()) as { files: string[] };
+        for (const f of files) git(`restore --staged -- "${f}"`);
+        return json({ ok: true });
+      }
+
+      // POST /api/git/commit
+      if (req.method === "POST" && url.pathname === "/api/git/commit") {
+        if (!isGitRepo()) return json({ ok: false, error: "Not a git repository" });
+        const { message } = (await req.json()) as { message: string };
+        if (!message?.trim()) return json({ ok: false, error: "Commit message required" });
+        // Sanitize message to prevent command injection
+        const safeMsg = message.replace(/"/g, '\\"');
+        const result = git(`commit -m "${safeMsg}"`);
+        return json({ ok: true, result });
+      }
+
+      // POST /api/git/push
+      if (req.method === "POST" && url.pathname === "/api/git/push") {
+        if (!isGitRepo()) return json({ ok: false, error: "Not a git repository" });
+        const { branch, setUpstream } = (await req.json()) as { branch?: string; setUpstream?: boolean };
+        const current = git("rev-parse --abbrev-ref HEAD");
+        const b = branch ?? current;
+        const cmd = setUpstream ? `push -u origin "${b}"` : `push origin "${b}"`;
+        const result = git(cmd);
+        return json({ ok: true, result });
+      }
+
+      // POST /api/git/checkout
+      if (req.method === "POST" && url.pathname === "/api/git/checkout") {
+        if (!isGitRepo()) return json({ ok: false, error: "Not a git repository" });
+        const { branch, create } = (await req.json()) as { branch: string; create?: boolean };
+        if (!branch?.trim()) return json({ ok: false, error: "Branch name required" });
+        const safeBranch = branch.replace(/[^a-zA-Z0-9._\-\/]/g, "");
+        const cmd = create ? `checkout -b "${safeBranch}"` : `checkout "${safeBranch}"`;
+        const result = git(cmd);
+        return json({ ok: true, result });
+      }
+
+      // POST /api/git/create-pr
+      if (req.method === "POST" && url.pathname === "/api/git/create-pr") {
+        if (!isGitRepo()) return json({ ok: false, error: "Not a git repository" });
+        const { title, body: prBody, base } = (await req.json()) as { title: string; body?: string; base?: string };
+        // Get remote URL to build PR creation link
+        let remoteUrl = "";
+        try { remoteUrl = git("remote get-url origin"); } catch {}
+        if (!remoteUrl) return json({ ok: false, error: "No remote 'origin' found" });
+
+        const current = git("rev-parse --abbrev-ref HEAD");
+        // Convert remote URL to browser URL
+        let webUrl = remoteUrl
+          .replace(/\.git$/, "")
+          .replace(/^git@([^:]+):/, "https://$1/")
+          .replace(/^ssh:\/\/git@([^/]+)\//, "https://$1/");
+
+        let prUrl: string;
+        if (webUrl.includes("github.com")) {
+          const baseBranch = base ?? "main";
+          prUrl = `${webUrl}/compare/${baseBranch}...${current}?expand=1&title=${encodeURIComponent(title)}${prBody ? `&body=${encodeURIComponent(prBody)}` : ""}`;
+        } else if (webUrl.includes("gitlab")) {
+          prUrl = `${webUrl}/-/merge_requests/new?merge_request[source_branch]=${current}&merge_request[target_branch]=${base ?? "main"}&merge_request[title]=${encodeURIComponent(title)}`;
+        } else {
+          prUrl = webUrl; // Fallback
+        }
+
+        return json({ ok: true, prUrl, branch: current });
+      }
+
+      // POST /api/git/log
+      if (req.method === "POST" && url.pathname === "/api/git/log") {
+        if (!isGitRepo()) return json({ ok: false, error: "Not a git repository" });
+        const { limit } = (await req.json()) as { limit?: number };
+        const n = Math.min(limit ?? 20, 100);
+        const raw = git(`log --oneline -${n} --format="%h|||%s|||%an|||%ar"`);
+        const commits = raw
+          ? raw.split("\n").map((line) => {
+              const [hash, message, author, date] = line.split("|||");
+              return { hash, message, author, date };
+            })
+          : [];
+        return json({ ok: true, commits });
       }
 
       return json({ error: "Not found" }, 404);

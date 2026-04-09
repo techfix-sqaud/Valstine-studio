@@ -6,17 +6,31 @@ import {
   Share2,
   PanelLeftClose,
   PanelLeft,
+  ArrowRightLeft,
+  GitBranch,
 } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
 import { cn } from "@/lib/utils";
 
-type SidebarTab = "explorer" | "connections" | "search" | "ai";
+type SidebarTab =
+  | "explorer"
+  | "connections"
+  | "search"
+  | "ai"
+  | "schema-compare"
+  | "git";
 
 const sidebarItems = [
   { id: "explorer" as SidebarTab, icon: FolderTree, label: "Explorer" },
   { id: "connections" as SidebarTab, icon: Database, label: "Connections" },
   { id: "search" as SidebarTab, icon: Search, label: "Search" },
   { id: "ai" as SidebarTab, icon: Sparkles, label: "AI Agent" },
+  {
+    id: "schema-compare" as SidebarTab,
+    icon: ArrowRightLeft,
+    label: "Schema Compare",
+  },
+  { id: "git" as SidebarTab, icon: GitBranch, label: "Source Control" },
 ] as const;
 
 export function ActivityBar() {

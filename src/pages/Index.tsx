@@ -7,6 +7,7 @@ import { EditorToolbar } from "@/components/EditorToolbar";
 import { QueryEditor } from "@/components/QueryEditor";
 import { ResultsPanel } from "@/components/ResultsPanel";
 import { SchemaVisualization } from "@/components/SchemaVisualization";
+import SchemaDiffView from "@/components/SchemaDiffView";
 import { StatusBar } from "@/components/StatusBar";
 import { CommandPalette } from "@/components/CommandPalette";
 import { ConnectionDialog } from "@/components/ConnectionDialog";
@@ -30,6 +31,7 @@ const Index = () => {
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const isSchemaTab = activeTab?.type === "schema";
+  const isDiffTab = activeTab?.type === "schema-diff";
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -58,30 +60,39 @@ const Index = () => {
   }, [sidebarOpen, isMobile, sidebarPanelRef]);
 
   // Active tab content area
-  const editorContent = isSchemaTab ? (
-    <div className="h-full w-full">
-      <SchemaVisualization />
-    </div>
-  ) : (
-    <>
-      <EditorToolbar />
-      <div className="flex-1 min-h-0 min-w-0">
-        {bottomPanelVisible ? (
-          <Group orientation="vertical" id="editor-results" className="h-full">
-            <Panel id="editor-top" defaultSize={60} minSize={20}>
-              <QueryEditor />
-            </Panel>
-            <Separator />
-            <Panel id="results-bottom" defaultSize={40} minSize={10}>
-              <ResultsPanel />
-            </Panel>
-          </Group>
-        ) : (
-          <QueryEditor />
-        )}
+  const editorContent =
+    isDiffTab && activeTab?.diffData ? (
+      <div className="h-full w-full">
+        <SchemaDiffView data={activeTab.diffData} />
       </div>
-    </>
-  );
+    ) : isSchemaTab ? (
+      <div className="h-full w-full">
+        <SchemaVisualization />
+      </div>
+    ) : (
+      <>
+        <EditorToolbar />
+        <div className="flex-1 min-h-0 min-w-0">
+          {bottomPanelVisible ? (
+            <Group
+              orientation="vertical"
+              id="editor-results"
+              className="h-full"
+            >
+              <Panel id="editor-top" defaultSize={60} minSize={20}>
+                <QueryEditor />
+              </Panel>
+              <Separator />
+              <Panel id="results-bottom" defaultSize={40} minSize={10}>
+                <ResultsPanel />
+              </Panel>
+            </Group>
+          ) : (
+            <QueryEditor />
+          )}
+        </div>
+      </>
+    );
 
   const editorArea = (
     <div className="flex flex-col h-full min-h-0 min-w-0">

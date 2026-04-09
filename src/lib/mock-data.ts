@@ -35,7 +35,8 @@ export interface QueryTab {
   content: string;
   connectionId: string;
   isDirty: boolean;
-  type?: 'query' | 'schema';
+  type?: 'query' | 'schema' | 'schema-diff';
+  diffData?: import('@/components/SchemaDiffView').SchemaDiffData;
 }
 
 export interface QueryResult {

@@ -15,6 +15,10 @@ import {
   ChevronRight,
   Moon,
   Sun,
+  ArrowRightLeft,
+  GitPullRequest,
+  Minus,
+  Plus,
 } from "lucide-react";
 
 const features = [
@@ -37,6 +41,24 @@ const features = [
       "Execute queries with real-time results, copy data, and export with one click.",
   },
   {
+    icon: ArrowRightLeft,
+    title: "Schema Comparison",
+    description:
+      "Side-by-side diff view inspired by VS Code. Compare two databases, see every change, and generate migration SQL instantly.",
+  },
+  {
+    icon: GitBranch,
+    title: "Built-in Version Control",
+    description:
+      "Stage, commit, push, and switch branches without leaving the studio. Full Git integration from the sidebar.",
+  },
+  {
+    icon: GitPullRequest,
+    title: "Pull Requests",
+    description:
+      "Push your branch and open a GitHub or GitLab PR directly from the studio — no context switching.",
+  },
+  {
     icon: Shield,
     title: "Secure Connections",
     description:
@@ -49,10 +71,10 @@ const features = [
       "Works on Web, macOS, and Windows. Your workspace syncs across devices.",
   },
   {
-    icon: GitBranch,
-    title: "Query History",
+    icon: Sparkles,
+    title: "AI Assistant",
     description:
-      "Every query is saved. Search, filter, and re-run any previous query instantly.",
+      "Ask the built-in AI to explain queries, suggest optimizations, or generate SQL from plain English.",
   },
 ];
 
@@ -294,6 +316,276 @@ export default function Landing() {
                 </p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Schema Comparison & Git Showcase */}
+      <section className="py-16 sm:py-24 border-t border-border">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 sm:mb-16">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium mb-4">
+              <ArrowRightLeft className="w-3 h-3" />
+              New in Valstine Studio
+            </div>
+            <h2 className="text-xl sm:text-2xl md:text-3xl font-bold mb-3 sm:mb-4">
+              Schema Diff & Version Control
+            </h2>
+            <p className="text-sm sm:text-base text-muted-foreground max-w-xl mx-auto">
+              Compare database schemas side-by-side and manage your changes with
+              built-in Git — all without leaving the studio.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
+            {/* Schema diff mockup */}
+            <div className="rounded-xl border border-border bg-card shadow-xl overflow-hidden">
+              <div className="h-8 bg-titlebar flex items-center px-3 gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-destructive/70" />
+                <div className="w-2.5 h-2.5 rounded-full bg-warning/70" />
+                <div className="w-2.5 h-2.5 rounded-full bg-success/70" />
+                <span className="ml-2 text-[10px] text-muted-foreground">
+                  Schema Compare — staging ↔ production
+                </span>
+              </div>
+              {/* Column headers */}
+              <div className="flex text-[10px] text-muted-foreground border-b border-border/40 bg-muted/20">
+                <div className="flex-1 px-2 py-0.5">staging (dev_db)</div>
+                <div className="w-px bg-border/40" />
+                <div className="flex-1 px-2 py-0.5">production (prod_db)</div>
+              </div>
+              {/* Side-by-side diff lines */}
+              <div className="font-mono text-[10px] sm:text-[11px] leading-[20px]">
+                {/* Unchanged */}
+                <div className="flex">
+                  <div className="w-[28px] shrink-0 text-right pr-1 text-muted-foreground/50">
+                    1
+                  </div>
+                  <div className="flex-1 px-1 text-muted-foreground/70 truncate">
+                    -- public.users
+                  </div>
+                  <div className="w-px bg-border/40" />
+                  <div className="w-[28px] shrink-0 text-right pr-1 text-muted-foreground/50">
+                    1
+                  </div>
+                  <div className="flex-1 px-1 text-muted-foreground/70 truncate">
+                    -- public.users
+                  </div>
+                </div>
+                {/* Added column */}
+                <div className="flex bg-green-500/10">
+                  <div className="w-[28px] shrink-0 text-right pr-1 text-muted-foreground/50"></div>
+                  <div className="flex-1 px-1 text-muted-foreground/40 truncate"></div>
+                  <div className="w-px bg-border/40" />
+                  <div className="w-[28px] shrink-0 text-right pr-1 bg-green-500/15 text-green-500/70">
+                    2
+                  </div>
+                  <div className="flex-1 px-1 text-green-400 truncate">
+                    {" "}
+                    + avatar_url varchar(512)
+                  </div>
+                </div>
+                {/* Modified column */}
+                <div className="flex bg-blue-500/10">
+                  <div className="w-[28px] shrink-0 text-right pr-1 bg-blue-500/15 text-blue-500/70">
+                    2
+                  </div>
+                  <div className="flex-1 px-1 text-blue-300 truncate">
+                    {" "}
+                    ~ email varchar(100)
+                  </div>
+                  <div className="w-px bg-border/40" />
+                  <div className="w-[28px] shrink-0 text-right pr-1 bg-blue-500/15 text-blue-500/70">
+                    3
+                  </div>
+                  <div className="flex-1 px-1 text-blue-300 truncate">
+                    {" "}
+                    ~ email varchar(255)
+                  </div>
+                </div>
+                {/* Unchanged */}
+                <div className="flex">
+                  <div className="w-[28px] shrink-0 text-right pr-1 text-muted-foreground/50">
+                    3
+                  </div>
+                  <div className="flex-1 px-1 text-muted-foreground/70 truncate">
+                    -- public.orders
+                  </div>
+                  <div className="w-px bg-border/40" />
+                  <div className="w-[28px] shrink-0 text-right pr-1 text-muted-foreground/50">
+                    4
+                  </div>
+                  <div className="flex-1 px-1 text-muted-foreground/70 truncate">
+                    -- public.orders
+                  </div>
+                </div>
+                {/* Removed column */}
+                <div className="flex bg-red-500/10">
+                  <div className="w-[28px] shrink-0 text-right pr-1 bg-red-500/15 text-red-500/70">
+                    4
+                  </div>
+                  <div className="flex-1 px-1 text-red-400 truncate">
+                    {" "}
+                    - legacy_ref integer
+                  </div>
+                  <div className="w-px bg-border/40" />
+                  <div className="w-[28px] shrink-0 text-right pr-1 text-muted-foreground/50"></div>
+                  <div className="flex-1 px-1 text-muted-foreground/40 truncate"></div>
+                </div>
+                {/* New table */}
+                <div className="flex bg-green-500/10">
+                  <div className="w-[28px] shrink-0 text-right pr-1 text-muted-foreground/50"></div>
+                  <div className="flex-1 px-1 text-muted-foreground/40 truncate"></div>
+                  <div className="w-px bg-border/40" />
+                  <div className="w-[28px] shrink-0 text-right pr-1 bg-green-500/15 text-green-500/70">
+                    5
+                  </div>
+                  <div className="flex-1 px-1 text-green-400 truncate">
+                    CREATE TABLE public.audit_log (
+                  </div>
+                </div>
+                <div className="flex bg-green-500/10">
+                  <div className="w-[28px] shrink-0 text-right pr-1 text-muted-foreground/50"></div>
+                  <div className="flex-1 px-1 text-muted-foreground/40 truncate"></div>
+                  <div className="w-px bg-border/40" />
+                  <div className="w-[28px] shrink-0 text-right pr-1 bg-green-500/15 text-green-500/70">
+                    6
+                  </div>
+                  <div className="flex-1 px-1 text-green-400 truncate">
+                    {" "}
+                    id serial PRIMARY KEY
+                  </div>
+                </div>
+                <div className="flex bg-green-500/10">
+                  <div className="w-[28px] shrink-0 text-right pr-1 text-muted-foreground/50"></div>
+                  <div className="flex-1 px-1 text-muted-foreground/40 truncate"></div>
+                  <div className="w-px bg-border/40" />
+                  <div className="w-[28px] shrink-0 text-right pr-1 bg-green-500/15 text-green-500/70">
+                    7
+                  </div>
+                  <div className="flex-1 px-1 text-green-400 truncate">);</div>
+                </div>
+              </div>
+              {/* Bottom bar */}
+              <div className="flex items-center gap-2 px-3 py-1.5 border-t border-border/40 bg-muted/10 text-[10px] text-muted-foreground">
+                <span className="text-green-400">+3 added</span>
+                <span className="text-red-400">-1 removed</span>
+                <span className="text-blue-400">~1 modified</span>
+                <span className="ml-auto">Generate migration SQL →</span>
+              </div>
+            </div>
+
+            {/* Git panel mockup */}
+            <div className="rounded-xl border border-border bg-card shadow-xl overflow-hidden">
+              <div className="h-8 bg-titlebar flex items-center px-3 gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-destructive/70" />
+                <div className="w-2.5 h-2.5 rounded-full bg-warning/70" />
+                <div className="w-2.5 h-2.5 rounded-full bg-success/70" />
+                <span className="ml-2 text-[10px] text-muted-foreground">
+                  Source Control
+                </span>
+              </div>
+              <div className="p-4 space-y-3">
+                {/* Branch */}
+                <div className="flex items-center gap-2 text-xs">
+                  <GitBranch className="w-3.5 h-3.5 text-primary" />
+                  <span className="font-medium">feature/add-audit-log</span>
+                  <span className="ml-auto text-green-400 text-[10px]">
+                    ↑2 ahead
+                  </span>
+                </div>
+                {/* Commit box */}
+                <div className="rounded-md border border-border bg-background p-2">
+                  <div className="text-[11px] text-muted-foreground mb-1">
+                    Add audit_log table and update email col
+                  </div>
+                  <div className="flex gap-1">
+                    <div className="flex-1 h-6 rounded bg-primary/90 flex items-center justify-center text-[10px] text-primary-foreground font-medium">
+                      <GitBranch className="w-3 h-3 mr-1" /> Commit
+                    </div>
+                    <div className="h-6 w-6 rounded border border-border flex items-center justify-center">
+                      <ArrowRight className="w-3 h-3 text-muted-foreground" />
+                    </div>
+                    <div className="h-6 w-6 rounded border border-border flex items-center justify-center">
+                      <GitPullRequest className="w-3 h-3 text-muted-foreground" />
+                    </div>
+                  </div>
+                </div>
+                {/* Changed files */}
+                <div>
+                  <div className="text-[10px] font-medium text-foreground mb-1.5">
+                    Changes (3 files)
+                  </div>
+                  <div className="space-y-0.5">
+                    {[
+                      {
+                        status: "M",
+                        file: "migrations/002_email.sql",
+                        color: "text-yellow-400",
+                      },
+                      {
+                        status: "A",
+                        file: "migrations/003_audit_log.sql",
+                        color: "text-green-400",
+                      },
+                      {
+                        status: "M",
+                        file: "schema/public.sql",
+                        color: "text-yellow-400",
+                      },
+                    ].map((f) => (
+                      <div
+                        key={f.file}
+                        className="flex items-center gap-1.5 text-[11px] py-0.5 px-1 rounded hover:bg-muted/30"
+                      >
+                        <span
+                          className={`font-mono text-[10px] w-3 ${f.color}`}
+                        >
+                          {f.status}
+                        </span>
+                        <span className="text-muted-foreground truncate">
+                          {f.file}
+                        </span>
+                        <Plus className="w-3 h-3 text-green-400/50 ml-auto" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* Recent commits */}
+                <div>
+                  <div className="text-[10px] font-medium text-foreground mb-1.5">
+                    Recent Commits
+                  </div>
+                  <div className="space-y-0.5">
+                    {[
+                      { hash: "a3f82c1", msg: "Add audit_log table migration" },
+                      {
+                        hash: "e91d4b0",
+                        msg: "Update email column varchar(255)",
+                      },
+                      { hash: "7c03fa2", msg: "Initial schema setup" },
+                    ].map((c) => (
+                      <div
+                        key={c.hash}
+                        className="flex items-center gap-1.5 text-[11px] py-0.5 px-1"
+                      >
+                        <span className="font-mono text-[10px] text-blue-400">
+                          {c.hash}
+                        </span>
+                        <span className="text-muted-foreground truncate">
+                          {c.msg}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* PR hint */}
+                <div className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-primary/5 border border-primary/20 text-[10px] text-primary">
+                  <GitPullRequest className="w-3.5 h-3.5" />
+                  Push & open a Pull Request on GitHub in one click
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

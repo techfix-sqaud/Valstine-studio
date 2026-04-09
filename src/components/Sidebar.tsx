@@ -2,7 +2,17 @@ import { useAppStore } from "@/store/app-store";
 import { AIChatSidebar } from "./AIChatSidebar";
 import { DatabaseExplorer } from "./DatabaseExplorer";
 import { ConnectionsList } from "./ConnectionsList";
-import { Search, FolderTree, Database, Sparkles, X } from "lucide-react";
+import SchemaCompare from "./SchemaCompare";
+import GitPanel from "./GitPanel";
+import {
+  Search,
+  FolderTree,
+  Database,
+  Sparkles,
+  ArrowRightLeft,
+  GitBranch,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -11,6 +21,12 @@ const sidebarItems = [
   { id: "connections" as const, icon: Database, label: "Connections" },
   { id: "search" as const, icon: Search, label: "Search" },
   { id: "ai" as const, icon: Sparkles, label: "AI Agent" },
+  {
+    id: "schema-compare" as const,
+    icon: ArrowRightLeft,
+    label: "Schema Compare",
+  },
+  { id: "git" as const, icon: GitBranch, label: "Source Control" },
 ] as const;
 
 function SearchPanel() {
@@ -41,6 +57,8 @@ function SidebarContent() {
       {activeSidebarTab === "connections" && <ConnectionsList />}
       {activeSidebarTab === "search" && <SearchPanel />}
       {activeSidebarTab === "ai" && <AIChatSidebar />}
+      {activeSidebarTab === "schema-compare" && <SchemaCompare />}
+      {activeSidebarTab === "git" && <GitPanel />}
     </>
   );
 }
