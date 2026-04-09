@@ -1,0 +1,304 @@
+import { useNavigate } from "react-router-dom";
+import { useAppStore } from "@/store/app-store";
+import { useEffect } from "react";
+import {
+  Database,
+  Zap,
+  Shield,
+  Globe,
+  Monitor,
+  ArrowRight,
+  Code2,
+  Table2,
+  GitBranch,
+  Sparkles,
+  ChevronRight,
+  Moon,
+  Sun,
+} from "lucide-react";
+
+const features = [
+  {
+    icon: Code2,
+    title: "Intelligent SQL Editor",
+    description:
+      "Monaco-powered editor with syntax highlighting, auto-complete, and bracket matching.",
+  },
+  {
+    icon: Table2,
+    title: "Visual Schema Explorer",
+    description:
+      "Navigate your database schema with an interactive diagram and tree explorer.",
+  },
+  {
+    icon: Zap,
+    title: "Lightning Fast Queries",
+    description:
+      "Execute queries with real-time results, copy data, and export with one click.",
+  },
+  {
+    icon: Shield,
+    title: "Secure Connections",
+    description:
+      "SSL/TLS encrypted connections with credential management and SSH tunneling.",
+  },
+  {
+    icon: Globe,
+    title: "Cross-Platform",
+    description:
+      "Works on Web, macOS, and Windows. Your workspace syncs across devices.",
+  },
+  {
+    icon: GitBranch,
+    title: "Query History",
+    description:
+      "Every query is saved. Search, filter, and re-run any previous query instantly.",
+  },
+];
+
+export default function Landing() {
+  const navigate = useNavigate();
+  const { completeOnboarding, isFirstTime, theme, toggleTheme } = useAppStore();
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [theme]);
+
+  const handleGetStarted = () => {
+    if (isFirstTime) {
+      navigate("/tour");
+    } else {
+      navigate("/studio");
+    }
+  };
+
+  const handleSkip = () => {
+    completeOnboarding();
+    navigate("/studio");
+  };
+
+  return (
+    <div className="min-h-screen bg-background text-foreground overflow-auto">
+      {/* Nav */}
+      <nav className="sticky top-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Database className="w-5 h-5 text-primary" />
+            <span className="font-semibold text-sm tracking-wide">
+              Valstine Studio
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground"
+            >
+              {theme === "dark" ? (
+                <Sun className="w-4 h-4" />
+              ) : (
+                <Moon className="w-4 h-4" />
+              )}
+            </button>
+            <button
+              onClick={handleSkip}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg hover:bg-secondary"
+            >
+              Skip to Studio
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      {/* Hero */}
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent" />
+        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 sm:pt-24 pb-16 sm:pb-20">
+          <div className="text-center max-w-3xl mx-auto">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium mb-6">
+              <Sparkles className="w-3 h-3" />
+              Built for modern database workflows
+            </div>
+            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-4 sm:mb-6">
+              The Database Studio
+              <br />
+              <span className="text-primary">You Deserve</span>
+            </h1>
+            <p className="text-base sm:text-lg text-muted-foreground max-w-xl mx-auto mb-8 sm:mb-10 leading-relaxed px-4">
+              A powerful, beautiful database management tool that runs
+              everywhere. Query, explore, and visualize your data with ease.
+            </p>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 px-4">
+              <button
+                onClick={handleGetStarted}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors shadow-lg shadow-primary/25"
+              >
+                Get Started
+                <ArrowRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleSkip}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-lg border border-border text-foreground font-medium text-sm hover:bg-secondary transition-colors"
+              >
+                Open Studio
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div className="mt-12 sm:mt-16 max-w-4xl mx-auto px-4">
+            <div className="rounded-xl border border-border bg-card shadow-2xl overflow-hidden">
+              <div className="h-8 bg-titlebar flex items-center px-3 gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-destructive/70" />
+                <div className="w-3 h-3 rounded-full bg-warning/70" />
+                <div className="w-3 h-3 rounded-full bg-success/70" />
+                <span className="ml-3 text-[10px] text-muted-foreground">
+                  Valstine Studio
+                </span>
+              </div>
+              <div className="grid grid-cols-12 h-48 sm:h-64">
+                <div className="col-span-3 bg-panel-bg border-r border-panel-border p-3">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2 font-medium">
+                    Explorer
+                  </div>
+                  <div className="space-y-1">
+                    {["public.users", "public.orders", "public.products"].map(
+                      (t) => (
+                        <div
+                          key={t}
+                          className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-foreground/70 py-0.5"
+                        >
+                          <Table2 className="w-3 h-3 text-primary" />
+                          <span className="truncate">{t}</span>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                </div>
+                <div className="col-span-9 flex flex-col">
+                  <div className="h-7 border-b border-panel-border bg-tab-inactive flex items-center px-2">
+                    <span className="text-[10px] text-muted-foreground">
+                      active_users.sql
+                    </span>
+                  </div>
+                  <div className="flex-1 bg-background p-3 font-mono text-[10px] sm:text-[11px] text-muted-foreground leading-relaxed">
+                    <span className="text-blue-400 font-bold">SELECT</span> id,
+                    email, full_name
+                    <br />
+                    <span className="text-blue-400 font-bold">FROM</span>{" "}
+                    public.users
+                    <br />
+                    <span className="text-blue-400 font-bold">WHERE</span>{" "}
+                    is_active = <span className="text-green-400">true</span>
+                    <br />
+                    <span className="text-blue-400 font-bold">
+                      ORDER BY
+                    </span>{" "}
+                    created_at{" "}
+                    <span className="text-blue-400 font-bold">DESC</span>;
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section className="py-16 sm:py-24 border-t border-border">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 sm:mb-16">
+            <h2 className="text-xl sm:text-2xl md:text-3xl font-bold mb-3 sm:mb-4">
+              Everything you need
+            </h2>
+            <p className="text-sm sm:text-base text-muted-foreground max-w-lg mx-auto">
+              Professional-grade tools for database management, all in one
+              place.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            {features.map((f) => (
+              <div
+                key={f.title}
+                className="group p-5 sm:p-6 rounded-xl border border-border bg-card hover:border-primary/30 hover:shadow-lg transition-all"
+              >
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                  <f.icon className="w-5 h-5 text-primary" />
+                </div>
+                <h3 className="font-semibold text-sm mb-2">{f.title}</h3>
+                <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                  {f.description}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Platforms */}
+      <section className="py-16 sm:py-24 border-t border-border bg-secondary/20">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-xl sm:text-2xl md:text-3xl font-bold mb-3 sm:mb-4">
+            Run Anywhere
+          </h2>
+          <p className="text-sm sm:text-base text-muted-foreground max-w-lg mx-auto mb-10 sm:mb-12">
+            Native desktop apps for macOS and Windows, plus a full web
+            experience.
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-6 sm:gap-8">
+            {[
+              {
+                icon: Monitor,
+                label: "Web Browser",
+                sub: "Chrome, Firefox, Safari",
+              },
+              { icon: Monitor, label: "macOS", sub: "Apple Silicon & Intel" },
+              { icon: Monitor, label: "Windows", sub: "Windows 10+" },
+            ].map((p) => (
+              <div
+                key={p.label}
+                className="flex items-center gap-3 px-6 py-4 rounded-xl border border-border bg-card w-full sm:w-auto"
+              >
+                <p.icon className="w-8 h-8 text-primary" />
+                <div className="text-left">
+                  <div className="font-medium text-sm">{p.label}</div>
+                  <div className="text-xs text-muted-foreground">{p.sub}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA */}
+      <section className="py-16 sm:py-24 border-t border-border">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-xl sm:text-2xl md:text-3xl font-bold mb-3 sm:mb-4">
+            Ready to get started?
+          </h2>
+          <p className="text-sm sm:text-base text-muted-foreground mb-6 sm:mb-8">
+            Jump right in and start querying your databases.
+          </p>
+          <button
+            onClick={handleGetStarted}
+            className="inline-flex items-center gap-2 px-8 py-3 rounded-lg bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors shadow-lg shadow-primary/25"
+          >
+            Launch Studio
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-border py-6 sm:py-8">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Database className="w-3.5 h-3.5 text-primary" />
+            <span>Valstine Studio</span>
+          </div>
+          <span>Built with care for developers</span>
+        </div>
+      </footer>
+    </div>
+  );
+}

@@ -1,25 +1,27 @@
-import { GitBranch, Database, Wifi } from 'lucide-react';
-import { useAppStore } from '@/store/app-store';
-import { mockConnections } from '@/lib/mock-data';
+import { GitBranch, Database, Wifi } from "lucide-react";
+import { useAppStore } from "@/store/app-store";
+import { mockConnections } from "@/lib/mock-data";
 
 export function StatusBar() {
   const { activeConnectionId, tabs, activeTabId } = useAppStore();
   const conn = mockConnections.find((c) => c.id === activeConnectionId);
 
   return (
-    <div className="h-6 bg-statusbar flex items-center justify-between px-2 text-statusbar-foreground text-[11px] shrink-0 select-none">
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1">
-          <Database className="w-3 h-3" />
-          <span>{conn?.name ?? 'No connection'}</span>
+    <div className="h-6 bg-statusbar flex items-center justify-between px-2 text-statusbar-foreground text-[11px] shrink-0 select-none overflow-hidden">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <div className="flex items-center gap-1 min-w-0">
+          <Database className="w-3 h-3 shrink-0" />
+          <span className="truncate max-w-[100px] sm:max-w-none">
+            {conn?.name ?? "No connection"}
+          </span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="hidden sm:flex items-center gap-1">
           <Wifi className="w-3 h-3" />
           <span>PostgreSQL 16</span>
         </div>
       </div>
-      <div className="flex items-center gap-3">
-        <span>UTF-8</span>
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        <span className="hidden sm:inline">UTF-8</span>
         <span>SQL</span>
         <div className="flex items-center gap-1">
           <GitBranch className="w-3 h-3" />

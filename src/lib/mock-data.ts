@@ -28,6 +28,7 @@ export interface QueryTab {
   content: string;
   connectionId: string;
   isDirty: boolean;
+  type?: 'query' | 'schema';
 }
 
 export interface QueryResult {

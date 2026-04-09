@@ -1,8 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
 
 @layer base {
   :root {
@@ -130,7 +130,6 @@
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
     font-size: 13px;
-    overflow: hidden;
   }
 }
 
@@ -160,23 +159,22 @@
   background-color: hsl(0 0% 97%) !important;
 }
 
-/* Resizable panel handle */
-[data-panel-group-direction="horizontal"] > [data-resize-handle] {
-  width: 3px !important;
+/* Resizable panel separators */
+[data-separator] {
   background: hsl(var(--panel-border));
   transition: background 150ms;
+  flex-shrink: 0;
 }
-[data-panel-group-direction="horizontal"] > [data-resize-handle]:hover,
-[data-panel-group-direction="horizontal"] > [data-resize-handle][data-resize-handle-active] {
-  background: hsl(var(--primary));
+[data-separator][aria-orientation="horizontal"] {
+  min-height: 3px;
+  cursor: row-resize;
 }
-[data-panel-group-direction="vertical"] > [data-resize-handle] {
-  height: 3px !important;
-  background: hsl(var(--panel-border));
-  transition: background 150ms;
+[data-separator][aria-orientation="vertical"] {
+  min-width: 3px;
+  cursor: col-resize;
 }
-[data-panel-group-direction="vertical"] > [data-resize-handle]:hover,
-[data-panel-group-direction="vertical"] > [data-resize-handle][data-resize-handle-active] {
+[data-separator]:hover,
+[data-separator][data-separator="drag"] {
   background: hsl(var(--primary));
 }
 
@@ -194,4 +192,39 @@
 }
 [cmdk-input] {
   font-family: var(--font-sans);
+}
+
+/* Utility: hide scrollbar */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Responsive touch targets */
+@media (pointer: coarse) {
+  .tree-item {
+    min-height: 36px;
+  }
+}
+
+/* Smooth page transitions */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.animate-fade-in {
+  animation: fade-in 300ms ease-out;
+}
+
+.animate-slide-down {
+  animation: slide-down 200ms ease-out;
 }

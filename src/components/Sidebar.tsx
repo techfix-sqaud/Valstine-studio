@@ -1,15 +1,16 @@
-import { useAppStore } from '@/store/app-store';
-import { DatabaseExplorer } from './DatabaseExplorer';
-import { ConnectionsList } from './ConnectionsList';
-import { SchemaVisualization } from './SchemaVisualization';
-import { Search, FolderTree, Database, Share2, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useAppStore } from "@/store/app-store";
+import { AIChatSidebar } from "./AIChatSidebar";
+import { DatabaseExplorer } from "./DatabaseExplorer";
+import { ConnectionsList } from "./ConnectionsList";
+import { Search, FolderTree, Database, Sparkles, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 
-const mobileItems = [
-  { id: 'explorer' as const, icon: FolderTree, label: 'Explorer' },
-  { id: 'connections' as const, icon: Database, label: 'Connections' },
-  { id: 'search' as const, icon: Search, label: 'Search' },
-  { id: 'schema' as const, icon: Share2, label: 'Schema' },
+const sidebarItems = [
+  { id: "explorer" as const, icon: FolderTree, label: "Explorer" },
+  { id: "connections" as const, icon: Database, label: "Connections" },
+  { id: "search" as const, icon: Search, label: "Search" },
+  { id: "ai" as const, icon: Sparkles, label: "AI Agent" },
 ] as const;
 
 function SearchPanel() {
@@ -32,48 +33,78 @@ function SearchPanel() {
   );
 }
 
-export function AppSidebar() {
-  const { activeSidebarTab, setActiveSidebarTab, sidebarOpen, toggleSidebar } = useAppStore();
-
+function SidebarContent() {
+  const activeSidebarTab = useAppStore((s) => s.activeSidebarTab);
   return (
     <>
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-background/60 z-40 md:hidden" onClick={toggleSidebar} />
-      )}
+      {activeSidebarTab === "explorer" && <DatabaseExplorer />}
+      {activeSidebarTab === "connections" && <ConnectionsList />}
+      {activeSidebarTab === "search" && <SearchPanel />}
+      {activeSidebarTab === "ai" && <AIChatSidebar />}
+    </>
+  );
+}
 
-      <div className={cn(
-        'h-full bg-panel-bg border-r border-panel-border overflow-hidden flex flex-col',
-        'max-md:fixed max-md:left-0 max-md:top-0 max-md:bottom-0 max-md:z-50 max-md:w-72 max-md:transition-transform max-md:duration-200',
-        !sidebarOpen && 'max-md:-translate-x-full'
-      )}>
-        {/* Mobile nav header */}
-        <div className="md:hidden flex items-center justify-between px-3 py-2 border-b border-panel-border">
-          <div className="flex items-center gap-1">
-            {mobileItems.map((item) => (
+export function AppSidebar() {
+  const { activeSidebarTab, setActiveSidebarTab, sidebarOpen, toggleSidebar } =
+    useAppStore();
+  const isMobile = useIsMobile();
+
+  // Desktop: just fill the Panel container
+  if (!isMobile) {
+    return (
+      <div className="h-full w-full bg-panel-bg overflow-hidden flex flex-col">
+        <div className="flex-1 min-h-0 overflow-auto">
+          <SidebarContent />
+        </div>
+      </div>
+    );
+  }
+
+  // Mobile: slide-over drawer
+  return (
+    <>
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-40"
+          onClick={toggleSidebar}
+        />
+      )}
+      <div
+        className={cn(
+          "fixed left-0 top-0 bottom-0 z-50 w-72 bg-panel-bg border-r border-panel-border flex flex-col",
+          "transition-transform duration-200 ease-out",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full",
+        )}
+      >
+        {/* Mobile tab nav */}
+        <div className="flex items-center justify-between px-2 py-2 border-b border-panel-border shrink-0">
+          <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-none">
+            {sidebarItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => setActiveSidebarTab(item.id)}
                 title={item.label}
                 className={cn(
-                  'p-2 rounded transition-colors',
-                  activeSidebarTab === item.id ? 'text-foreground bg-secondary' : 'text-muted-foreground'
+                  "p-2 rounded transition-colors shrink-0",
+                  activeSidebarTab === item.id
+                    ? "text-foreground bg-secondary"
+                    : "text-muted-foreground",
                 )}
               >
                 <item.icon className="w-4 h-4" />
               </button>
             ))}
           </div>
-          <button onClick={toggleSidebar} className="p-1 rounded hover:bg-secondary text-muted-foreground">
+          <button
+            onClick={toggleSidebar}
+            className="p-1.5 rounded hover:bg-secondary text-muted-foreground shrink-0"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
-
         <div className="flex-1 min-h-0 overflow-auto">
-          {activeSidebarTab === 'explorer' && <DatabaseExplorer />}
-          {activeSidebarTab === 'connections' && <ConnectionsList />}
-          {activeSidebarTab === 'search' && <SearchPanel />}
-          {activeSidebarTab === 'schema' && <SchemaVisualization />}
+          <SidebarContent />
         </div>
       </div>
     </>
