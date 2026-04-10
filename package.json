@@ -11,6 +11,7 @@
     "dev:front": "vite",
     "server": "bun run server/index.ts",
     "build": "vite build",
+    "start": "NODE_ENV=production bun run server/index.ts",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
@@ -21,7 +22,11 @@
     "electron:build": "vite build && tsc -p electron/tsconfig.json",
     "electron:dist": "npm run electron:build && electron-builder",
     "electron:dist:mac": "npm run electron:build && electron-builder --mac",
-    "electron:dist:win": "npm run electron:build && electron-builder --win"
+    "electron:dist:win": "npm run electron:build && electron-builder --win",
+    "electron:dist:linux": "npm run electron:build && electron-builder --linux",
+    "version:patch": "npm version patch --no-git-tag-version && git add package.json && git commit -m \"chore: bump version to $(node -p require('./package.json').version)\"",
+    "version:minor": "npm version minor --no-git-tag-version && git add package.json && git commit -m \"chore: bump version to $(node -p require('./package.json').version)\"",
+    "version:major": "npm version major --no-git-tag-version && git add package.json && git commit -m \"chore: bump version to $(node -p require('./package.json').version)\""
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -54,6 +59,7 @@
     "@radix-ui/react-toggle-group": "^1.1.10",
     "@radix-ui/react-tooltip": "^1.2.7",
     "@tanstack/react-query": "^5.83.0",
+    "@xterm/xterm": "^6.0.0",
     "better-sqlite3": "^12.8.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -98,7 +104,7 @@
     "autoprefixer": "^10.4.21",
     "concurrently": "^8.2.2",
     "electron": "^33.0.0",
-    "electron-builder": "^25.1.8",
+    "electron-builder": "^26.8.1",
     "eslint": "^9.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
@@ -125,11 +131,19 @@
     "mac": {
       "target": ["dmg", "zip"],
       "icon": "public/icon.png",
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "artifactName": "Valstine-Studio.${ext}"
     },
     "win": {
       "target": ["nsis", "zip"],
-      "icon": "public/icon.png"
+      "icon": "public/icon.png",
+      "artifactName": "Valstine-Studio-Setup.${ext}"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "public/icon.png",
+      "category": "Development",
+      "artifactName": "Valstine-Studio.${ext}"
     },
     "nsis": {
       "oneClick": false,

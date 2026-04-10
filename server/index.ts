@@ -1,6 +1,11 @@
 import knex, { Knex } from "knex";
+import { execSync } from "child_process";
+import fs from "node:fs/promises";
+import path from "node:path";
 
-const PORT = 3001;
+const PORT = parseInt(process.env.PORT || "3001", 10);
+const isProd = process.env.NODE_ENV === "production";
+const DIST_DIR = path.join(import.meta.dir, "..", "dist");
 
 // Pool of knex instances keyed by a connection fingerprint
 const pool = new Map<string, Knex>();
@@ -507,7 +512,6 @@ function diffSnapshots(source: SchemaSnapshot, target: SchemaSnapshot): SchemaDi
 }
 
 // ───── Git helpers ─────
-import { execSync } from "child_process";
 
 function git(args: string, cwd?: string): string {
   try {
@@ -823,6 +827,25 @@ Bun.serve({
         return json({ ok: true, commits });
       }
 
+      // ── Production static file serving ──
+      // In production, serve the Vite-built dist/ folder and SPA fallback
+      if (isProd) {
+        const filePath = path.join(DIST_DIR, url.pathname === "/" ? "index.html" : url.pathname);
+        const file = Bun.file(filePath);
+        if (await file.exists()) {
+          return new Response(file, {
+            headers: { "Content-Type": file.type || "application/octet-stream" },
+          });
+        }
+        // SPA fallback: serve index.html for any non-API route
+        const index = Bun.file(path.join(DIST_DIR, "index.html"));
+        if (await index.exists()) {
+          return new Response(index, {
+            headers: { "Content-Type": "text/html" },
+          });
+        }
+      }
+
       return json({ error: "Not found" }, 404);
     } catch (err: any) {
       return json({ ok: false, status: "error", message: err.message ?? String(err), columns: [], rows: [], rowCount: 0, executionTime: 0 });
@@ -830,4 +853,4 @@ Bun.serve({
   },
 });
 
-console.log(`⚡ Valstine Studio query server running on http://localhost:${PORT}`);
+console.log(`⚡ Valstine Studio running on http://localhost:${PORT}${isProd ? " (production)" : ""}`);

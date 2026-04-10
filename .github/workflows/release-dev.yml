@@ -1,0 +1,125 @@
+name: Release Dev
+
+on:
+  push:
+    branches: [dev]
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate dev version
+        id: version
+        run: |
+          BASE=$(node -p "require('./package.json').version")
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          DEV_VERSION="${BASE}-dev.${GITHUB_RUN_NUMBER}"
+          echo "version=${DEV_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${DEV_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "🏷️ Dev release: v${DEV_VERSION} (${SHORT_SHA})"
+
+  build:
+    needs: version
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+            artifact: Valstine-Studio.dmg
+          - os: windows-latest
+            platform: win
+            artifact: Valstine-Studio-Setup.exe
+          - os: ubuntu-latest
+            platform: linux
+            artifact: Valstine-Studio.AppImage
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node (for electron-builder)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: bun install
+
+      # Stamp the dev version into package.json so the app reports it
+      - name: Set dev version
+        run: |
+          node -e "
+            const pkg = require('./package.json');
+            pkg.version = '${{ needs.version.outputs.version }}';
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Build Electron app
+        run: bun run electron:build
+
+      - name: Package for ${{ matrix.platform }}
+        run: npx electron-builder --${{ matrix.platform }} --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: release/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la artifacts/
+
+      - name: Create GitHub Pre-Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: "Valstine Studio ${{ needs.version.outputs.tag }} (Dev)"
+          body: |
+            ## Valstine Studio ${{ needs.version.outputs.tag }} (Development)
+
+            ⚠️ **This is a development pre-release** — not recommended for production use.
+
+            **Commit:** `${{ github.sha }}`
+            **Branch:** `dev`
+
+            ### Downloads
+            | Platform | File |
+            |----------|------|
+            | macOS | `Valstine-Studio.dmg` |
+            | Windows | `Valstine-Studio-Setup.exe` |
+            | Linux | `Valstine-Studio.AppImage` |
+          files: artifacts/*
+          draft: false
+          prerelease: true
+          make_latest: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

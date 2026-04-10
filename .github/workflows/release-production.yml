@@ -1,0 +1,112 @@
+name: Release Production
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "🏷️ Production release: v${VERSION}"
+
+  build:
+    needs: version
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+            artifact: Valstine-Studio.dmg
+          - os: windows-latest
+            platform: win
+            artifact: Valstine-Studio-Setup.exe
+          - os: ubuntu-latest
+            platform: linux
+            artifact: Valstine-Studio.AppImage
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node (for electron-builder)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build Electron app
+        run: bun run electron:build
+
+      - name: Package for ${{ matrix.platform }}
+        run: npx electron-builder --${{ matrix.platform }} --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: release/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: "Valstine Studio ${{ needs.version.outputs.tag }}"
+          body: |
+            ## Valstine Studio ${{ needs.version.outputs.tag }} (Production)
+
+            ### Downloads
+            | Platform | File |
+            |----------|------|
+            | macOS | `Valstine-Studio.dmg` |
+            | Windows | `Valstine-Studio-Setup.exe` |
+            | Linux | `Valstine-Studio.AppImage` |
+
+            ### Changes
+            See [commit log](https://github.com/${{ github.repository }}/compare/${{ needs.version.outputs.tag }}...HEAD) for details.
+          files: artifacts/*
+          draft: false
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

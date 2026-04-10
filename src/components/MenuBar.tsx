@@ -230,6 +230,14 @@ export function MenuBar() {
     return () => document.removeEventListener("mousedown", handler);
   }, [openMenu]);
 
+  // On macOS Electron the native menu bar handles these menus
+  const isElectronMac =
+    typeof window !== "undefined" &&
+    (window as any).electronAPI?.isElectron &&
+    (window as any).electronAPI?.platform === "darwin";
+
+  if (isElectronMac) return null;
+
   return (
     <div
       ref={menuBarRef}

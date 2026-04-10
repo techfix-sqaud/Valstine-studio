@@ -1,7 +1,6 @@
 import { useState } from "react";
 import {
   Table,
-  Terminal,
   AlertTriangle,
   Download,
   Copy,
@@ -9,11 +8,13 @@ import {
   ChevronUp,
   ChevronDown,
   Clock,
+  Terminal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 import { QueryHistory } from "./QueryHistory";
 import { showContextMenu } from "./ContextMenu";
+import TerminalComponent from "./Terminal";
 
 function ResultsTable() {
   const queryResult = useAppStore((s) => s.queryResult);
@@ -207,17 +208,7 @@ function ResultsTable() {
 }
 
 function TerminalPanel() {
-  return (
-    <div className="flex-1 p-3 font-mono text-xs">
-      <div className="text-muted-foreground">
-        <span className="text-success">dbstudio</span>
-        <span className="text-muted-foreground">@</span>
-        <span className="text-primary">production</span>
-        <span className="text-muted-foreground"> $ </span>
-        <span className="animate-pulse">▊</span>
-      </div>
-    </div>
-  );
+  return <TerminalComponent />;
 }
 
 export function ResultsPanel() {

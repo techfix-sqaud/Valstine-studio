@@ -16,6 +16,9 @@ import { useAppStore } from "@/store/app-store";
 import { useEffect } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
+const isElectronApp =
+  typeof window !== "undefined" && (window as any).electronAPI?.isElectron;
+
 const Index = () => {
   const {
     executeQuery,
@@ -47,6 +50,56 @@ const Index = () => {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [executeQuery]);
+
+  // Listen for native Electron menu events
+  useEffect(() => {
+    if (!isElectronApp) return;
+    const api = (window as any).electronAPI;
+    const cleanups: (() => void)[] = [];
+    const store = useAppStore.getState;
+
+    cleanups.push(
+      api.onMenuEvent("menu:new-tab", () => {
+        const tabs = store().tabs;
+        store().addTab({
+          id: `tab-${Date.now()}`,
+          title: `query_${tabs.length + 1}.sql`,
+          content: "-- New query\nSELECT 1;",
+          connectionId: store().activeConnectionId || "conn-1",
+          isDirty: false,
+        });
+      }),
+    );
+    cleanups.push(
+      api.onMenuEvent("menu:open-schema", () => store().openSchemaTab()),
+    );
+    cleanups.push(
+      api.onMenuEvent("menu:command-palette", () =>
+        store().toggleCommandPalette(),
+      ),
+    );
+    cleanups.push(
+      api.onMenuEvent("menu:toggle-sidebar", () => store().toggleSidebar()),
+    );
+    cleanups.push(
+      api.onMenuEvent("menu:toggle-panel", () =>
+        store().setBottomPanelVisible(!store().bottomPanelVisible),
+      ),
+    );
+    cleanups.push(
+      api.onMenuEvent("menu:toggle-theme", () => store().toggleTheme()),
+    );
+    cleanups.push(
+      api.onMenuEvent("menu:execute-query", () => store().executeQuery()),
+    );
+    cleanups.push(
+      api.onMenuEvent("menu:sidebar-tab", (tab: string) =>
+        store().setActiveSidebarTab(tab as any),
+      ),
+    );
+
+    return () => cleanups.forEach((fn) => fn());
+  }, []);
 
   // Sync store → panel
   useEffect(() => {

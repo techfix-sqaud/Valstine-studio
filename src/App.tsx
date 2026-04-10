@@ -24,6 +24,17 @@ const Router = isElectron ? HashRouter : BrowserRouter;
 
 function RootRedirect() {
   const isFirstTime = useAppStore((s) => s.isFirstTime);
+
+  // Desktop: never show landing page — tour on first run, then studio
+  if (isElectron) {
+    return isFirstTime ? (
+      <Navigate to="/tour" replace />
+    ) : (
+      <Navigate to="/studio" replace />
+    );
+  }
+
+  // Web: show landing page on first visit
   return isFirstTime ? (
     <Navigate to="/welcome" replace />
   ) : (
