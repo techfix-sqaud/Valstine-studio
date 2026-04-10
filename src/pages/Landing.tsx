@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "@/store/app-store";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   Database,
   Zap,
@@ -124,14 +124,49 @@ export default function Landing() {
     navigate("/studio");
   };
 
-  // ── Download logic ─────────────────────────────────────────────────────
-  const GITHUB_RELEASE_BASE =
-    "https://github.com/techfix-sqaud/Valstine-studio/releases/latest/download";
+  // ── Download logic: fetch latest release info from GitHub API ──────────
+  const [releaseInfo, setReleaseInfo] = useState<{
+    tag: string;
+    assets: Record<string, string>;
+  } | null>(null);
+  const [releaseError, setReleaseError] = useState<string | null>(null);
 
+  useEffect(() => {
+    // Fetch all releases (including pre-releases) from GitHub API
+    fetch(
+      "https://api.github.com/repos/techfix-sqaud/Valstine-studio/releases?per_page=1",
+    )
+      .then((res) => res.json())
+      .then((releases) => {
+        if (!Array.isArray(releases) || releases.length === 0)
+          throw new Error("No releases found");
+        const data = releases[0];
+        if (!data.tag_name || !Array.isArray(data.assets))
+          throw new Error("No release found");
+        // Map asset names to download URLs
+        const assets: Record<string, string> = {};
+        for (const asset of data.assets) {
+          if (asset.name.endsWith(".dmg"))
+            assets.mac = asset.browser_download_url;
+          if (asset.name.endsWith(".exe"))
+            assets.windows = asset.browser_download_url;
+          if (asset.name.endsWith(".AppImage"))
+            assets.linux = asset.browser_download_url;
+        }
+        setReleaseInfo({ tag: data.tag_name, assets });
+      })
+      .catch((err) => setReleaseError("Could not fetch release info."));
+  }, []);
+
+  const fallbackBase =
+    "https://github.com/techfix-sqaud/Valstine-studio/releases/latest/download";
   const downloadLinks = {
-    mac: `${GITHUB_RELEASE_BASE}/Valstine-Studio.dmg`,
-    windows: `${GITHUB_RELEASE_BASE}/Valstine-Studio-Setup.exe`,
-    linux: `${GITHUB_RELEASE_BASE}/Valstine-Studio.AppImage`,
+    mac: releaseInfo?.assets.mac || `${fallbackBase}/Valstine-Studio.dmg`,
+    windows:
+      releaseInfo?.assets.windows ||
+      `${fallbackBase}/Valstine-Studio-Setup.exe`,
+    linux:
+      releaseInfo?.assets.linux || `${fallbackBase}/Valstine-Studio.AppImage`,
   };
 
   const platformLabel = {

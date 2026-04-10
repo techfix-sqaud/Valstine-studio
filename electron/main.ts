@@ -242,7 +242,7 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:8080');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
   }
 
   mainWindow.on('closed', () => {
