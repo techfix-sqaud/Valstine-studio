@@ -81,6 +81,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ── 3. Publish (un-draft) the pre-release ─────────────────────────────
+  # electron-builder --publish always creates draft release(s); we just un-draft here.
+  # Using gh CLI avoids the "already_exists" conflict that action-gh-release hits when
+  # multiple parallel build jobs each create a draft for the same tag.
   publish:
     needs: [version, build]
     runs-on: ubuntu-latest
@@ -88,29 +91,26 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Publish pre-release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.version.outputs.tag }}
-          name: "Valstine Studio ${{ needs.version.outputs.tag }}"
-          draft: false
-          prerelease: true
-          make_latest: false
-          body: |
-            ## Valstine Studio ${{ needs.version.outputs.tag }} — Development Build
-
-            > ⚠️ **Pre-release** — built from `dev` branch. Not recommended for production use.
-
-            **Commit:** `${{ github.sha }}`
-            **Run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-
-            ---
-
-            ### 📦 Downloads
-
-            | Platform | Installer |
-            |----------|-----------|
-            | macOS | `Valstine-Studio.dmg` |
-            | Windows | `Valstine-Studio-Setup.exe` |
-            | Linux | `Valstine-Studio.AppImage` |
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ needs.version.outputs.tag }}" \
+            --draft=false \
+            --prerelease \
+            --title "Valstine Studio ${{ needs.version.outputs.tag }}" \
+            --notes "## Valstine Studio ${{ needs.version.outputs.tag }} — Development Build
+
+          > ⚠️ **Pre-release** — built from \`dev\` branch. Not recommended for production use.
+
+          **Commit:** \`${{ github.sha }}\`
+          **Run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          ---
+
+          ### Downloads
+
+          | Platform | Installer |
+          |----------|-----------|
+          | macOS | \`Valstine-Studio.dmg\` |
+          | Windows | \`Valstine-Studio-Setup.exe\` |
+          | Linux | \`Valstine-Studio.AppImage\` |"
