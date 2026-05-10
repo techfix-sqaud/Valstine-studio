@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -9,8 +9,8 @@ import {
 } from "@/components/ui/dialog";
 import { useAppStore } from "@/store/app-store";
 import { DBConnection, DBType } from "@/lib/mock-data";
-import { DB_TYPE_META, testConnection } from "@/lib/api";
-import { Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { DB_TYPE_META, testConnection, uploadSqliteFile } from "@/lib/api";
+import { Loader2, CheckCircle2, XCircle, Upload } from "lucide-react";
 
 const DB_TYPES: DBType[] = ["pg", "mysql", "sqlite", "mssql"];
 
@@ -46,6 +46,9 @@ export function ConnectionDialog() {
     ok: boolean;
     error?: string;
   } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (connectionDialogOpen) {
@@ -56,6 +59,7 @@ export function ConnectionDialog() {
         setForm(emptyConn());
       }
       setTestResult(null);
+      setUploadError(null);
     }
   }, [connectionDialogOpen, editingConnection]);
 
@@ -67,6 +71,26 @@ export function ConnectionDialog() {
       host: type === "sqlite" ? "" : f.host || "localhost",
     }));
     setTestResult(null);
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const r = await uploadSqliteFile(file);
+      if (r.ok && r.path) {
+        setForm((f) => ({ ...f, filename: r.path, database: r.path }));
+      } else {
+        setUploadError(r.error ?? "Upload failed");
+      }
+    } catch (err: any) {
+      setUploadError(err.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const handleTest = async () => {
@@ -178,23 +202,45 @@ export function ConnectionDialog() {
           </div>
 
           {isSQLite ? (
-            /* SQLite: just filename */
+            /* SQLite: filename input + upload button */
             <div>
               <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
                 Database File Path
               </label>
-              <input
-                value={form.filename ?? ""}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    filename: e.target.value,
-                    database: e.target.value,
-                  }))
-                }
-                placeholder="/path/to/database.db"
-                className="w-full h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              />
+              <div className="flex gap-2">
+                <input
+                  value={form.filename ?? ""}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      filename: e.target.value,
+                      database: e.target.value,
+                    }))
+                  }
+                  placeholder="/path/to/database.db"
+                  className="flex-1 h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  title="Upload a .db or .sqlite file"
+                  className="inline-flex items-center gap-1.5 px-3 h-8 rounded-md border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50 shrink-0"
+                >
+                  {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                  Upload
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".db,.sqlite,.sqlite3,.db3"
+                  className="hidden"
+                  onChange={handleUpload}
+                />
+              </div>
+              {uploadError && (
+                <p className="mt-1 text-[11px] text-destructive">{uploadError}</p>
+              )}
             </div>
           ) : (
             /* Host / Port / DB / User / Password */

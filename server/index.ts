@@ -37,6 +37,8 @@ class BunSQLite implements DbLike {
   private db: BunDatabase;
 
   constructor(filename: string) {
+    const dir = path.dirname(path.resolve(filename));
+    mkdirSync(dir, { recursive: true });
     this.db = new BunDatabase(filename, { create: true });
   }
 
@@ -1128,6 +1130,28 @@ Bun.serve({
           lines.push("");
         }
         return respond({ ok: true, sql: lines.join("\n"), tableCount: snapshot.tables.length });
+      }
+
+      // POST /api/upload-sqlite — receive a SQLite file and save it to the data directory
+      if (req.method === "POST" && url.pathname === "/api/upload-sqlite") {
+        let formData: FormData;
+        try {
+          formData = await req.formData();
+        } catch {
+          return respond({ ok: false, error: "Invalid multipart form data" }, 400);
+        }
+        const file = formData.get("file") as File | null;
+        if (!file || typeof file === "string") return respond({ ok: false, error: "No file uploaded" }, 400);
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        if (!safeName.match(/\.(db|sqlite|sqlite3|db3)$/i)) {
+          return respond({ ok: false, error: "Only .db / .sqlite files are accepted" }, 400);
+        }
+        const uploadDir = path.join(APP_DATA_DIR, "uploads");
+        mkdirSync(uploadDir, { recursive: true });
+        const dest = path.join(uploadDir, safeName);
+        const buffer = await file.arrayBuffer();
+        await fs.writeFile(dest, Buffer.from(buffer));
+        return respond({ ok: true, path: dest });
       }
 
       // ─── App state endpoints (SQLite-backed, replaces localStorage) ───

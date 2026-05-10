@@ -17,10 +17,10 @@ function toPayload(conn: DBConnection) {
   };
 }
 
-// Returns either connectionId (for saved connections without password) or full payload.
-// Passwords are stored server-side; if the connection has no password in state, use connectionId.
+// Returns either connectionId (for saved connections without password in state) or full inline payload.
+// "temp" means the connection hasn't been saved yet — always send inline so the server doesn't look it up.
 function toBody(conn: DBConnection): { connectionId: string } | { connection: ReturnType<typeof toPayload> } {
-  if (!conn.password) return { connectionId: conn.id };
+  if (conn.id !== "temp" && !conn.password) return { connectionId: conn.id };
   return { connection: toPayload(conn) };
 }
 
@@ -60,6 +60,21 @@ async function post<T = any>(path: string, body: unknown): Promise<T> {
 
 async function get<T = any>(path: string): Promise<T> {
   return request<T>('GET', path);
+}
+
+export async function uploadSqliteFile(file: File): Promise<{ ok: boolean; path?: string; error?: string }> {
+  if (isElectron) throw new Error("File upload not supported in Electron mode");
+  const form = new FormData();
+  form.append("file", file);
+  let res: Response;
+  try {
+    res = await fetch("/api/upload-sqlite", { method: "POST", body: form });
+  } catch {
+    throw new Error("Cannot reach the server. Is the backend running?");
+  }
+  const text = await res.text();
+  if (!text) throw new Error(`Server returned empty response (HTTP ${res.status})`);
+  return JSON.parse(text);
 }
 
 export async function testConnection(conn: DBConnection): Promise<{ ok: boolean; error?: string }> {
