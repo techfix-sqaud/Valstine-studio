@@ -28,43 +28,11 @@ jobs:
           echo "tag=v${DEV_VERSION}" >> "$GITHUB_OUTPUT"
           echo "Releasing: v${DEV_VERSION}"
 
-  # ── 2. Create a draft pre-release ─────────────────────────────────────
-  create-release:
-    needs: version
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Create draft pre-release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.version.outputs.tag }}
-          name: "Valstine Studio ${{ needs.version.outputs.tag }}"
-          draft: true
-          prerelease: true
-          body: |
-            ## Valstine Studio ${{ needs.version.outputs.tag }} — Development Build
-
-            > ⚠️ **Pre-release** — built from `dev` branch. Not recommended for production use.
-
-            **Commit:** `${{ github.sha }}`
-            **Run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-
-            ---
-
-            ### 📦 Downloads
-
-            | Platform | Installer |
-            |----------|-----------|
-            | macOS | `Valstine-Studio.dmg` |
-            | Windows | `Valstine-Studio-Setup.exe` |
-            | Linux | `Valstine-Studio.AppImage` |
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ── 3. Build and upload (all platforms in parallel) ───────────────────
+  # ── 2. Build and upload (all platforms in parallel) ───────────────────
+  # electron-builder --publish always creates the draft release on first run;
+  # the other two platform jobs find it and upload their assets to it.
   build:
-    needs: [version, create-release]
+    needs: [version]
     strategy:
       matrix:
         include:
@@ -112,7 +80,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 4. Publish (un-draft) the pre-release ─────────────────────────────
+  # ── 3. Publish (un-draft) the pre-release ─────────────────────────────
   publish:
     needs: [version, build]
     runs-on: ubuntu-latest
@@ -123,8 +91,26 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
+          name: "Valstine Studio ${{ needs.version.outputs.tag }}"
           draft: false
           prerelease: true
           make_latest: false
+          body: |
+            ## Valstine Studio ${{ needs.version.outputs.tag }} — Development Build
+
+            > ⚠️ **Pre-release** — built from `dev` branch. Not recommended for production use.
+
+            **Commit:** `${{ github.sha }}`
+            **Run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+            ---
+
+            ### 📦 Downloads
+
+            | Platform | Installer |
+            |----------|-----------|
+            | macOS | `Valstine-Studio.dmg` |
+            | Windows | `Valstine-Studio-Setup.exe` |
+            | Linux | `Valstine-Studio.AppImage` |
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

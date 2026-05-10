@@ -11,9 +11,9 @@
     "node": "22.x"
   },
   "scripts": {
-    "dev": "concurrently \"bun run server\" \"vite\"",
+    "dev": "concurrently \"SERVER_PORT=3001 bun run server/index.ts\" \"vite\"",
     "dev:front": "vite",
-    "server": "bun run server/index.ts",
+    "server": "SERVER_PORT=3001 bun run server/index.ts",
     "build": "vite build",
     "start": "NODE_ENV=production bun run server/index.ts",
     "build:dev": "vite build --mode development",

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, shell, Menu, ipcMain, safeStorage } from 'electron';
-import { autoUpdater } from 'electron-updater';
+import electronUpdater from 'electron-updater';
+const { autoUpdater } = electronUpdater;
 import path from 'node:path';
 import * as os from 'os';
 import * as pty from 'node-pty';

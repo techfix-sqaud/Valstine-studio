@@ -79,42 +79,11 @@ jobs:
             echo "CHANGELOG_EOF"
           } >> "$GITHUB_OUTPUT"
 
-  # ── 2. Create a draft release with the changelog ──────────────────────
-  create-release:
-    needs: version
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Create draft release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.version.outputs.tag }}
-          name: "Valstine Studio ${{ needs.version.outputs.tag }}"
-          draft: true
-          prerelease: false
-          body: |
-            ## Valstine Studio ${{ needs.version.outputs.tag }}
-
-            ${{ needs.version.outputs.changelog }}
-
-            ---
-
-            ### 📦 Downloads
-
-            | Platform | Installer | Notes |
-            |----------|-----------|-------|
-            | macOS | `Valstine-Studio.dmg` | Universal binary (Apple Silicon + Intel) |
-            | Windows | `Valstine-Studio-Setup.exe` | NSIS installer |
-            | Linux | `Valstine-Studio.AppImage` | No install required — make executable and run |
-
-            > **Auto-updates**: Once installed, Valstine Studio checks for updates automatically and notifies you when a new version is ready.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ── 3. Build and upload to draft release (all platforms in parallel) ───
+  # ── 2. Build and upload to draft release (all platforms in parallel) ───
+  # electron-builder --publish always creates the draft release on first run;
+  # the other two platform jobs find it and upload their assets to it.
   build:
-    needs: [version, create-release]
+    needs: [version]
     strategy:
       matrix:
         include:
@@ -162,7 +131,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 4. Publish (un-draft) once all platform builds succeed ────────────
+  # ── 3. Publish (un-draft) once all platform builds succeed ────────────
   publish:
     needs: [version, build]
     runs-on: ubuntu-latest
@@ -173,8 +142,25 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
+          name: "Valstine Studio ${{ needs.version.outputs.tag }}"
           draft: false
           prerelease: false
           make_latest: true
+          body: |
+            ## Valstine Studio ${{ needs.version.outputs.tag }}
+
+            ${{ needs.version.outputs.changelog }}
+
+            ---
+
+            ### 📦 Downloads
+
+            | Platform | Installer | Notes |
+            |----------|-----------|-------|
+            | macOS | `Valstine-Studio.dmg` | Universal binary (Apple Silicon + Intel) |
+            | Windows | `Valstine-Studio-Setup.exe` | NSIS installer |
+            | Linux | `Valstine-Studio.AppImage` | No install required — make executable and run |
+
+            > **Auto-updates**: Once installed, Valstine Studio checks for updates automatically and notifies you when a new version is ready.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
