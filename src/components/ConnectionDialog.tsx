@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -130,6 +131,10 @@ export function ConnectionDialog() {
           <DialogTitle className="text-sm font-semibold">
             {isEditing ? "Edit Connection" : "New Connection"}
           </DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
+            Configure a real database connection, test it against the backend,
+            and save it for reuse in Studio or Analyst OS.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">

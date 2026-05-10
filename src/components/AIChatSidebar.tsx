@@ -74,6 +74,7 @@ export function AIChatSidebar() {
             {activeTab ? activeTab.title : "No active tab"}
           </div>
         </div>
+
       </div>
 
       <div className="flex-1 space-y-3 overflow-auto px-3 py-3">

@@ -12,6 +12,13 @@ import {
   RefreshCw,
   Plus,
   Loader2,
+  Copy,
+  Download,
+  Hash,
+  GitBranch,
+  Pencil,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
@@ -88,6 +95,7 @@ function TableItem({
   const [open, setOpen] = useState(false);
   const [columns, setColumns] = useState<api.RemoteColumnInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [rowCount, setRowCount] = useState<number | null>(null);
   const conn = useAppStore((s) =>
     s.connections.find((c) => c.id === s.activeConnectionId),
   );
@@ -108,50 +116,104 @@ function TableItem({
   const handleToggle = () => {
     const next = !open;
     setOpen(next);
-    if (next) loadColumns();
+    if (next) {
+      loadColumns();
+      if (rowCount === null && conn && table.type === "table") {
+        api.fetchRowCount(conn, table.name, schema).then(setRowCount).catch(() => {});
+      }
+    }
   };
 
   const qualified = `${schema}.${table.name}`;
+
+  const exportTableData = async (format: "csv" | "json") => {
+    if (!conn) return;
+    const cols = columns.length > 0 ? columns : await api.fetchColumns(conn, table.name, schema);
+    const result = await api.executeQuery(conn, `SELECT * FROM ${qualified} LIMIT 5000`);
+    if (result.status === "error") { alert(result.message); return; }
+    const ts = new Date().toISOString().slice(0, 19).replace(/[:.]/g, "-");
+    if (format === "csv") {
+      const escape = (v: unknown) => { const s = String(v ?? ""); return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s; };
+      const csv = [cols.map((c) => c.name).join(","), ...result.rows.map((r) => cols.map((c) => escape(r[c.name])).join(","))].join("\r\n");
+      const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = `${table.name}_${ts}.csv`; a.click();
+    } else {
+      const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(result.rows, null, 2)], { type: "application/json" })); a.download = `${table.name}_${ts}.json`; a.click();
+    }
+  };
 
   const handleContextMenu = (e: React.MouseEvent) => {
     const connId = useAppStore.getState().activeConnectionId;
     showContextMenu(e, [
       {
-        label: "SELECT TOP 100",
-        action: () =>
+        label: "SELECT TOP 1000",
+        action: () => {
           addTab({
             id: `tab-${Date.now()}`,
             title: `${table.name}.sql`,
-            content: `SELECT *\nFROM ${qualified}\nLIMIT 100;`,
+            content: `SELECT *\nFROM ${qualified}\nLIMIT 1000;`,
             connectionId: connId,
             isDirty: false,
-          }),
+          });
+          useAppStore.getState().executeQuery();
+        },
       },
       {
         label: "SELECT COUNT(*)",
-        action: () =>
+        action: () => {
           addTab({
             id: `tab-${Date.now()}`,
             title: `count_${table.name}.sql`,
-            content: `SELECT COUNT(*)\nFROM ${qualified};`,
+            content: `SELECT COUNT(*) AS total_rows\nFROM ${qualified};`,
             connectionId: connId,
             isDirty: false,
-          }),
+          });
+          useAppStore.getState().executeQuery();
+        },
+      },
+      {
+        label: "Preview (100 rows)",
+        action: async () => {
+          if (!conn) return;
+          const cols = columns.length > 0 ? columns : await api.fetchColumns(conn, table.name, schema);
+          const pk = cols.find((c) => c.primaryKey)?.name ?? cols[0]?.name ?? "1";
+          addTab({
+            id: `tab-${Date.now()}`,
+            title: `preview_${table.name}.sql`,
+            content: `SELECT *\nFROM ${qualified}\nORDER BY ${pk}\nLIMIT 100;`,
+            connectionId: connId,
+            isDirty: false,
+          });
+          useAppStore.getState().executeQuery();
+        },
       },
       { separator: true, label: "sep" },
       {
-        label: "Generate INSERT",
+        label: "Generate INSERT template",
         action: async () => {
           if (!conn) return;
-          const cols =
-            columns.length > 0
-              ? columns
-              : await api.fetchColumns(conn, table.name, schema);
-          const colNames = cols.map((c) => c.name).join(", ");
+          const cols = columns.length > 0 ? columns : await api.fetchColumns(conn, table.name, schema);
+          const colNames = cols.map((c) => c.name).join(",\n  ");
+          const vals = cols.map((c) => `-- ${c.type}`).join(",\n  ");
           addTab({
             id: `tab-${Date.now()}`,
             title: `insert_${table.name}.sql`,
-            content: `INSERT INTO ${qualified} (${colNames})\nVALUES ();`,
+            content: `INSERT INTO ${qualified} (\n  ${colNames}\n)\nVALUES (\n  ${vals}\n);`,
+            connectionId: connId,
+            isDirty: false,
+          });
+        },
+      },
+      {
+        label: "Generate UPDATE template",
+        action: async () => {
+          if (!conn) return;
+          const cols = columns.length > 0 ? columns : await api.fetchColumns(conn, table.name, schema);
+          const pk = cols.find((c) => c.primaryKey);
+          const setClauses = cols.filter((c) => !c.primaryKey).map((c) => `  ${c.name} = -- ${c.type}`).join(",\n");
+          addTab({
+            id: `tab-${Date.now()}`,
+            title: `update_${table.name}.sql`,
+            content: `UPDATE ${qualified}\nSET\n${setClauses}\nWHERE ${pk ? `${pk.name} = ?` : "-- condition"};`,
             connectionId: connId,
             isDirty: false,
           });
@@ -161,16 +223,8 @@ function TableItem({
         label: "Generate CREATE TABLE",
         action: async () => {
           if (!conn) return;
-          const cols =
-            columns.length > 0
-              ? columns
-              : await api.fetchColumns(conn, table.name, schema);
-          const colDefs = cols
-            .map(
-              (c) =>
-                `  ${c.name} ${c.type}${c.primaryKey ? " PRIMARY KEY" : ""}${c.nullable ? "" : " NOT NULL"}`,
-            )
-            .join(",\n");
+          const cols = columns.length > 0 ? columns : await api.fetchColumns(conn, table.name, schema);
+          const colDefs = cols.map((c) => `  "${c.name}" ${c.type}${c.primaryKey ? " PRIMARY KEY" : ""}${c.nullable ? "" : " NOT NULL"}${c.defaultValue ? ` DEFAULT ${c.defaultValue}` : ""}`).join(",\n");
           addTab({
             id: `tab-${Date.now()}`,
             title: `create_${table.name}.sql`,
@@ -182,7 +236,20 @@ function TableItem({
       },
       { separator: true, label: "sep2" },
       {
+        label: "Export data as CSV",
+        action: () => exportTableData("csv"),
+      },
+      {
+        label: "Export data as JSON",
+        action: () => exportTableData("json"),
+      },
+      { separator: true, label: "sep3" },
+      {
         label: "Copy Table Name",
+        action: () => navigator.clipboard.writeText(table.name),
+      },
+      {
+        label: "Copy Qualified Name",
         action: () => navigator.clipboard.writeText(qualified),
       },
       {
@@ -194,16 +261,12 @@ function TableItem({
           setColumns(cols);
         },
       },
-      { separator: true, label: "sep3" },
+      { separator: true, label: "sep4" },
       {
         label: "Truncate Table",
         danger: true,
         action: async () => {
-          if (
-            !conn ||
-            !confirm(`Are you sure you want to truncate ${qualified}?`)
-          )
-            return;
+          if (!conn || !confirm(`Are you sure you want to TRUNCATE ${qualified}?\n\nThis will delete ALL rows permanently.`)) return;
           const r = await api.truncateTable(conn, table.name, schema);
           if (!r.ok) alert(r.error ?? "Failed to truncate table");
         },
@@ -212,8 +275,7 @@ function TableItem({
         label: "Drop Table",
         danger: true,
         action: async () => {
-          if (!conn || !confirm(`Are you sure you want to DROP ${qualified}?`))
-            return;
+          if (!conn || !confirm(`Are you sure you want to DROP TABLE ${qualified}?\n\nThis is irreversible.`)) return;
           const r = await api.dropTable(conn, table.name, schema);
           if (!r.ok) alert(r.error ?? "Failed to drop table");
         },
@@ -239,6 +301,11 @@ function TableItem({
           <Table2 className="w-3.5 h-3.5 text-primary shrink-0" />
         )}
         <span className="text-foreground truncate">{table.name}</span>
+        {rowCount !== null && (
+          <span className="text-muted-foreground ml-auto text-[9px] shrink-0 tabular-nums">
+            {rowCount >= 0 ? rowCount.toLocaleString() : ""}
+          </span>
+        )}
         {loading && (
           <Loader2 className="w-3 h-3 text-muted-foreground ml-auto animate-spin shrink-0" />
         )}
@@ -607,7 +674,19 @@ export function DatabaseExplorer() {
     if (!conn) return;
     showContextMenu(e, [
       {
-        label: "Refresh",
+        label: "New Query Tab",
+        action: () => {
+          useAppStore.getState().addTab({
+            id: `tab-${Date.now()}`,
+            title: `query_${conn.name}.sql`,
+            content: `-- Connected to ${conn.name}\nSELECT 1;`,
+            connectionId: conn.id,
+            isDirty: false,
+          });
+        },
+      },
+      {
+        label: "Refresh Explorer",
         action: () => setFetchKey((k) => k + 1),
       },
       { separator: true, label: "sep" },
@@ -623,16 +702,25 @@ export function DatabaseExplorer() {
       },
       { separator: true, label: "sep2" },
       {
-        label: "New Query",
+        label: "Copy Connection String",
         action: () => {
-          useAppStore.getState().addTab({
-            id: `tab-${Date.now()}`,
-            title: `query_${conn.name}.sql`,
-            content: `-- Connected to ${conn.name}\nSELECT 1;`,
-            connectionId: conn.id,
-            isDirty: false,
-          });
+          const cs = conn.type === "sqlite"
+            ? conn.filename ?? conn.database
+            : `${conn.type}://${conn.user ? conn.user + "@" : ""}${conn.host}:${conn.port}/${conn.database}`;
+          navigator.clipboard.writeText(cs);
         },
+      },
+      {
+        label: "Push Schema to GitHub →",
+        action: () => {
+          useAppStore.getState().setActiveSidebarTab("git");
+        },
+      },
+      { separator: true, label: "sep3" },
+      {
+        label: "Disconnect",
+        action: () => useAppStore.getState().disconnectConnection(conn.id),
+        danger: true,
       },
     ]);
   };

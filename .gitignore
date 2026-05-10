@@ -1,7 +1,15 @@
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Server-side SQLite app database
+data/
+
 # Logs
 logs
 *.log
-npm-debug.log*
+bun-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*

@@ -1,5 +1,9 @@
 import { app, BrowserWindow, shell, Menu, ipcMain, safeStorage } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import path from 'node:path';
+import * as os from 'os';
+import * as pty from 'node-pty';
+import { registerDbIPC } from './db-ipc.js';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (process.platform === 'win32') {
@@ -10,6 +14,56 @@ const isDev = !app.isPackaged;
 const isMac = process.platform === 'darwin';
 
 let mainWindow: BrowserWindow | null = null;
+let ptyProcess: pty.IPty | null = null;
+
+// ── Terminal Shell Integration ─────────────────────────────────────────
+function setupTerminal(win: BrowserWindow) {
+  // Kill any previous PTY before spawning a new one (handles HMR reloads in dev)
+  if (ptyProcess) {
+    ptyProcess.kill();
+    ptyProcess = null;
+  }
+
+  const shellBin =
+    process.platform === 'win32'
+      ? 'powershell.exe'
+      : (process.env.SHELL ?? '/bin/bash');
+
+  ptyProcess = pty.spawn(shellBin, [], {
+    name: 'xterm-256color',
+    cols: 80,
+    rows: 24,
+    cwd: os.homedir(),
+    env: {
+      ...process.env,
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+      TERM_PROGRAM: 'valstine-studio',
+    },
+  });
+
+  ptyProcess.onData((data) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('terminal:data', data);
+    }
+  });
+
+  ptyProcess.onExit(() => {
+    ptyProcess = null;
+  });
+
+  // Remove any stale handlers before registering (prevents duplicate listener accumulation)
+  ipcMain.removeAllListeners('terminal:input');
+  ipcMain.removeAllListeners('terminal:resize');
+
+  ipcMain.on('terminal:input', (_event, data: string) => {
+    ptyProcess?.write(data);
+  });
+
+  ipcMain.on('terminal:resize', (_event, size: { cols: number; rows: number }) => {
+    ptyProcess?.resize(size.cols, size.rows);
+  });
+}
 
 // ── Native Menu (macOS: system bar, Windows/Linux: in-window) ────────────
 
@@ -70,6 +124,10 @@ function buildNativeMenu() {
           label: 'Command Palette',
           accelerator: 'CmdOrCtrl+Shift+P',
           click: () => mainWindow?.webContents.send('menu:command-palette'),
+        },
+        {
+          label: "View Dashboard",
+          click: () => mainWindow?.webContents.send('menu:view-dashboard'),
         },
         { type: 'separator' },
         {
@@ -200,6 +258,47 @@ function registerKeychainIPC() {
   });
 }
 
+// ── Auto-Updater ─────────────────────────────────────────────────────────
+
+function setupAutoUpdater() {
+  if (isDev) return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-available', (info) => {
+    mainWindow?.webContents.send('updater:update-available', {
+      version: info.version,
+      releaseNotes: info.releaseNotes,
+    });
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    mainWindow?.webContents.send('updater:download-progress', {
+      percent: Math.round(progress.percent),
+      transferred: progress.transferred,
+      total: progress.total,
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    mainWindow?.webContents.send('updater:update-downloaded', {
+      version: info.version,
+    });
+  });
+
+  // Check 5 seconds after launch so the app is fully visible first
+  setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 5000);
+}
+
+ipcMain.handle('updater:install', () => {
+  autoUpdater.quitAndInstall();
+});
+
+ipcMain.handle('updater:check', () => {
+  if (!isDev) autoUpdater.checkForUpdates().catch(() => {});
+});
+
 // ── Window Creation ──────────────────────────────────────────────────────
 
 function createWindow() {
@@ -242,12 +341,16 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:8080');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+    // __dirname is dist-electron/ — dist/ is a sibling, not a child
+    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // Setup terminal shell integration after window is created
+  setupTerminal(mainWindow);
 }
 
 // ── App Lifecycle ────────────────────────────────────────────────────────
@@ -255,10 +358,11 @@ function createWindow() {
 app.whenReady().then(() => {
   buildNativeMenu();
   registerKeychainIPC();
+  registerDbIPC();
   createWindow();
+  setupAutoUpdater();
 
   app.on('activate', () => {
-    // macOS: re-create window when dock icon is clicked and no windows open
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
@@ -268,5 +372,12 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (!isMac) {
     app.quit();
+  }
+});
+
+app.on('will-quit', () => {
+  if (ptyProcess) {
+    ptyProcess.kill();
+    ptyProcess = null;
   }
 });

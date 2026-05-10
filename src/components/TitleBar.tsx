@@ -3,7 +3,7 @@ import { useAppStore } from "@/store/app-store";
 import { MenuBar } from "./MenuBar";
 
 export function TitleBar() {
-  const { toggleCommandPalette, toggleTheme, theme, toggleSidebar } =
+  const { toggleCommandPalette, toggleTheme, theme, toggleSidebar, openSettingsPanel } =
     useAppStore();
 
   return (
@@ -51,7 +51,12 @@ export function TitleBar() {
             <Moon className="w-3.5 h-3.5" />
           )}
         </button>
-        <button className="p-1 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground">
+        <button
+          onClick={openSettingsPanel}
+          className="p-1 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          title="Settings"
+        >
           <Settings className="w-3.5 h-3.5" />
         </button>
       </div>

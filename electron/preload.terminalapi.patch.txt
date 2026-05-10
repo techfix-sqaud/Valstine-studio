@@ -1,0 +1,16 @@
+import { contextBridge, ipcRenderer } from 'electron';
+
+// --- Add this to your preload.ts ---
+contextBridge.exposeInMainWorld('terminalAPI', {
+  onData: (callback: (data: string) => void) => {
+    ipcRenderer.on('terminal:data', (_event, data) => callback(data));
+  },
+  sendInput: (data: string) => {
+    ipcRenderer.send('terminal:input', data);
+  },
+  resize: (cols: number, rows: number) => {
+    ipcRenderer.send('terminal:resize', { cols, rows });
+  },
+});
+
+// ...existing electronAPI exposeInMainWorld code below...

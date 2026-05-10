@@ -1,5 +1,5 @@
 import { useRef, useEffect } from "react";
-import { X, FileCode2, Plus, Share2 } from "lucide-react";
+import { X, FileCode2, LayoutDashboard, Plus, Share2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 import { showContextMenu } from "./ContextMenu";
@@ -59,7 +59,12 @@ export function TabBar() {
     >
       {tabs.map((tab) => {
         const isSchema = tab.type === "schema";
-        const TabIcon = isSchema ? Share2 : FileCode2;
+        const isDashboard = tab.type === "dashboard";
+        const TabIcon = isSchema
+          ? Share2
+          : isDashboard
+            ? LayoutDashboard
+            : FileCode2;
         return (
           <button
             key={tab.id}
@@ -76,7 +81,11 @@ export function TabBar() {
             <TabIcon
               className={cn(
                 "w-3.5 h-3.5 shrink-0",
-                isSchema ? "text-green-500" : "text-primary",
+                isSchema
+                  ? "text-green-500"
+                  : isDashboard
+                    ? "text-sky-500"
+                    : "text-primary",
               )}
             />
             <span className="truncate">{tab.title}</span>

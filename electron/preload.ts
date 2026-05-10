@@ -1,5 +1,52 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+// ── Terminal API ───────────────────────────────────────────────────────
+
+contextBridge.exposeInMainWorld('terminalAPI', {
+  onData: (callback: (data: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: string) => callback(data);
+    ipcRenderer.on('terminal:data', listener);
+    // Return a cleanup function so the renderer can remove the listener
+    return () => ipcRenderer.removeListener('terminal:data', listener);
+  },
+  sendInput: (data: string) => {
+    ipcRenderer.send('terminal:input', data);
+  },
+  resize: (cols: number, rows: number) => {
+    ipcRenderer.send('terminal:resize', { cols, rows });
+  },
+});
+
+// ── DB / Git IPC bridge ────────────────────────────────────────────────
+// Maps route-style action names (matching server/index.ts) to IPC channels.
+
+const DB_ACTION_MAP: Record<string, string> = {
+  'test-connection': 'db:test-connection',
+  disconnect: 'db:disconnect',
+  execute: 'db:execute',
+  databases: 'db:databases',
+  schemas: 'db:schemas',
+  tables: 'db:tables',
+  columns: 'db:columns',
+  'row-count': 'db:row-count',
+  'create-database': 'db:create-database',
+  'drop-database': 'db:drop-database',
+  'drop-table': 'db:drop-table',
+  'truncate-table': 'db:truncate-table',
+  'create-schema': 'db:create-schema',
+  'schema-diff': 'db:schema-diff',
+  'git/status': 'git:status',
+  'git/branches': 'git:branches',
+  'git/diff': 'git:diff',
+  'git/stage': 'git:stage',
+  'git/unstage': 'git:unstage',
+  'git/commit': 'git:commit',
+  'git/push': 'git:push',
+  'git/checkout': 'git:checkout',
+  'git/log': 'git:log',
+  'git/create-pr': 'git:create-pr',
+};
+
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
   isElectron: true,
@@ -9,12 +56,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     electron: process.versions.electron,
   },
 
-  // Keychain (vault key storage via OS secure storage)
+  // DB/Git proxy: renderer calls this instead of fetch('/api/*') in Electron
+  dbQuery: (action: string, payload: unknown) => {
+    const channel = DB_ACTION_MAP[action];
+    if (!channel) throw new Error(`Unknown db action: ${action}`);
+    return ipcRenderer.invoke(channel, payload);
+  },
+
+  // Keychain (OS secure storage for connection passwords)
   keychainSet: (key: string, value: string) => ipcRenderer.invoke('keychain:set', key, value),
   keychainGet: (key: string) => ipcRenderer.invoke('keychain:get', key),
   keychainDelete: (key: string) => ipcRenderer.invoke('keychain:delete', key),
 
-  // Native menu event listeners (macOS menu bar & Windows overlay)
+  // Native menu event listeners
   onMenuEvent: (channel: string, callback: (...args: any[]) => void) => {
     const validChannels = [
       'menu:new-tab',
@@ -27,11 +81,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'menu:sidebar-tab',
       'menu:about',
     ];
-    if (validChannels.includes(channel)) {
-      const listener = (_event: any, ...args: any[]) => callback(...args);
-      ipcRenderer.on(channel, listener);
-      return () => ipcRenderer.removeListener(channel, listener);
-    }
-    return () => {};
+    if (!validChannels.includes(channel)) return () => {};
+    const listener = (_event: Electron.IpcRendererEvent, ...args: any[]) => callback(...args);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.removeListener(channel, listener);
   },
+});
+
+// ── Auto-Updater API ───────────────────────────────────────────────────────
+
+contextBridge.exposeInMainWorld('updaterAPI', {
+  onUpdateAvailable: (callback: (info: { version: string }) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, info: { version: string }) => callback(info);
+    ipcRenderer.on('updater:update-available', listener);
+    return () => ipcRenderer.removeListener('updater:update-available', listener);
+  },
+  onDownloadProgress: (callback: (progress: { percent: number }) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, p: { percent: number }) => callback(p);
+    ipcRenderer.on('updater:download-progress', listener);
+    return () => ipcRenderer.removeListener('updater:download-progress', listener);
+  },
+  onUpdateDownloaded: (callback: (info: { version: string }) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, info: { version: string }) => callback(info);
+    ipcRenderer.on('updater:update-downloaded', listener);
+    return () => ipcRenderer.removeListener('updater:update-downloaded', listener);
+  },
+  installUpdate: () => ipcRenderer.invoke('updater:install'),
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
 });

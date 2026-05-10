@@ -35,7 +35,7 @@ export interface QueryTab {
   content: string;
   connectionId: string;
   isDirty: boolean;
-  type?: 'query' | 'schema' | 'schema-diff';
+  type?: 'query' | 'dashboard' | 'schema' | 'schema-diff' | 'api-generator' | 'api-tester';
   diffData?: import('@/components/SchemaDiffView').SchemaDiffData;
 }
 
@@ -139,6 +139,12 @@ ORDER BY u.created_at DESC
 LIMIT 100;`;
 
 export const defaultTabs: QueryTab[] = [
-  { id: 'tab-1', title: 'active_users.sql', content: defaultQueryContent, connectionId: 'conn-1', isDirty: false },
-  { id: 'tab-2', title: 'order_stats.sql', content: `-- Order statistics by month\nSELECT \n  DATE_TRUNC('month', created_at) AS month,\n  COUNT(*) AS total_orders,\n  SUM(total_amount) AS revenue,\n  AVG(total_amount) AS avg_order_value\nFROM public.orders\nWHERE status = 'completed'\nGROUP BY month\nORDER BY month DESC;`, connectionId: 'conn-1', isDirty: true },
+  {
+    id: 'dashboard-1',
+    title: 'fleet_usage.vdash',
+    content: '',
+    connectionId: 'conn-1',
+    isDirty: false,
+    type: 'dashboard',
+  },
 ];
