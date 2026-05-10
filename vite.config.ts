@@ -7,6 +7,13 @@ export default defineConfig({
   server: {
     host: "::",
     port: 8080,
+    allowedHosts: [
+      'valstine.com',
+      'www.valstine.com',
+      'platform.valstine.com',
+      'valstine-platform-35dh7.ondigitalocean.app',
+      '.valstine.com',
+    ],
     hmr: {
       overlay: false,
     },
