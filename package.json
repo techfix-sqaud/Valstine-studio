@@ -21,7 +21,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "native:rebuild:electron": "bunx node@22 ./node_modules/@electron/rebuild/lib/cli.js -f -w better-sqlite3 -w node-pty",
+    "native:rebuild:electron": "bunx electron-rebuild -f -w better-sqlite3 -w node-pty",
     "electron:dev": "bun run native:rebuild:electron && concurrently --kill-others-on-fail \"vite\" \"bun run electron:start-delayed\"",
     "electron:start-delayed": "tsc -p electron/tsconfig.json && node -e \"const h=require('http');(function c(){h.get('http://localhost:8080',r=>{if(r.statusCode<500)require('child_process').spawn(require('electron'),['.'],{stdio:'inherit'})}).on('error',()=>setTimeout(c,500))})()\"",
     "electron:build": "bun run native:rebuild:electron && vite build && tsc -p electron/tsconfig.json",

@@ -88,6 +88,10 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install libfuse2 (Linux — required for AppImage)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get install -y libfuse2
+
       - name: Install dependencies
         run: bun install
 

@@ -970,15 +970,14 @@ export default function Landing() {
       .catch(() => setReleaseInfo(null));
   }, []);
 
+  // If no release info yet, link to the releases page so users can find what's available.
+  const releasesPage = "https://github.com/techfix-sqaud/Valstine-studio/releases/latest";
   const fallbackBase =
     "https://github.com/techfix-sqaud/Valstine-studio/releases/latest/download";
   const downloadLinks = {
-    mac: releaseInfo?.assets.mac || `${fallbackBase}/Valstine-Studio.dmg`,
-    windows:
-      releaseInfo?.assets.windows ||
-      `${fallbackBase}/Valstine-Studio-Setup.exe`,
-    linux:
-      releaseInfo?.assets.linux || `${fallbackBase}/Valstine-Studio.AppImage`,
+    mac: releaseInfo?.assets.mac || (releaseInfo ? `${fallbackBase}/Valstine-Studio.dmg` : releasesPage),
+    windows: releaseInfo?.assets.windows || (releaseInfo ? `${fallbackBase}/Valstine-Studio-Setup.exe` : releasesPage),
+    linux: releaseInfo?.assets.linux || (releaseInfo ? `${fallbackBase}/Valstine-Studio.AppImage` : releasesPage),
   };
 
   const handleDownload = (target: "mac" | "windows" | "linux") => {

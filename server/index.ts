@@ -265,12 +265,17 @@ function resolveConnection(body: { connectionId?: string; connection?: Connectio
   throw new Error("Either connectionId or connection is required");
 }
 
-// Only allow requests from localhost — this is a local-only server.
-// An origin of null is sent by file:// and Electron; both are acceptable here.
+// Allowed origins: localhost (dev + Electron), plus any domain set via ALLOWED_ORIGIN env var.
+// An empty/null origin (file://, Electron IPC) is always accepted.
+const EXTRA_ORIGIN = process.env.ALLOWED_ORIGIN ?? "";
+const ALLOWED_ORIGIN_RE = /^https?:\/\/localhost(:\d+)?$/;
+
 function corsOrigin(req: Request): string {
   const origin = req.headers.get("origin") ?? "";
-  if (!origin || /^https?:\/\/localhost(:\d+)?$/.test(origin)) return origin || "null";
-  return "null"; // Deny cross-origin requests from non-localhost origins
+  if (!origin) return "*"; // no origin = Electron / file:// / same-origin — allow
+  if (ALLOWED_ORIGIN_RE.test(origin)) return origin;
+  if (EXTRA_ORIGIN && (origin === EXTRA_ORIGIN || EXTRA_ORIGIN === "*")) return origin;
+  return "null"; // deny unknown cross-origin
 }
 
 function cors(req: Request) {
@@ -726,6 +731,11 @@ Bun.serve({
       });
 
     try {
+      // GET /api/status — health check
+      if (req.method === "GET" && url.pathname === "/api/status") {
+        return respond({ ok: true, version: process.env.npm_package_version ?? "unknown" });
+      }
+
       // POST /api/test-connection
       if (req.method === "POST" && url.pathname === "/api/test-connection") {
         const body = (await req.json()) as { connectionId?: string; connection?: ConnectionPayload };
