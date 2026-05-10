@@ -13,9 +13,18 @@ const ptyMap = new Map<any, ReturnType<typeof Bun.spawn>>();
 // Absolute path to the pty-worker so it can be spawned from anywhere
 const PTY_WORKER = path.join(import.meta.dir, "pty-worker.cjs");
 
-const PORT = parseInt(process.env.PORT || "3001", 10);
+// SERVER_PORT takes precedence so dev (which also has PORT set by the platform)
+// doesn't collide with Vite. Production uses PORT directly via the `start` script.
+const PORT = parseInt(process.env.SERVER_PORT ?? process.env.PORT ?? "3001", 10);
 const isProd = process.env.NODE_ENV === "production";
 const DIST_DIR = path.join(import.meta.dir, "..", "dist");
+
+// DATA_DIR: override via env var for cloud/container deployments where the
+// app directory may be read-only (e.g. DigitalOcean App Platform, Railway).
+const DEFAULT_DATA_DIR = isProd
+  ? path.join(os.homedir(), ".valstine", "data")
+  : path.join(import.meta.dir, "..", "data");
+const APP_DATA_DIR_RESOLVED = process.env.DATA_DIR ?? DEFAULT_DATA_DIR;
 
 // Common interface satisfied by both Knex and BunSQLite
 interface DbLike {
@@ -56,7 +65,7 @@ class BunSQLite implements DbLike {
 const pool = new Map<string, DbLike>();
 
 // ───── App database (connections, settings, history) ─────
-const APP_DATA_DIR = path.join(import.meta.dir, "..", "data");
+const APP_DATA_DIR = APP_DATA_DIR_RESOLVED;
 mkdirSync(APP_DATA_DIR, { recursive: true });
 const appDb = new BunDatabase(path.join(APP_DATA_DIR, "valstine.db"), { create: true });
 
@@ -716,21 +725,20 @@ Bun.serve({
 
     if (req.method === "OPTIONS") return cors(req);
 
-    // Per-request json() with the correct CORS origin already baked in
-    const allowedOrigin = corsOrigin(req);
-    const respond = (data: unknown, status = 200) =>
-      new Response(JSON.stringify(data), {
-        status,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": allowedOrigin,
-          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type",
-          "Vary": "Origin",
-        },
-      });
-
     try {
+      // Per-request json() with the correct CORS origin already baked in
+      const allowedOrigin = corsOrigin(req);
+      const respond = (data: unknown, status = 200) =>
+        new Response(JSON.stringify(data), {
+          status,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": allowedOrigin,
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Vary": "Origin",
+          },
+        });
       // GET /api/status — health check
       if (req.method === "GET" && url.pathname === "/api/status") {
         return respond({ ok: true, version: process.env.npm_package_version ?? "unknown" });
@@ -1481,7 +1489,11 @@ Bun.serve({
 
       return respond({ error: "Not found" }, 404);
     } catch (err: any) {
-      return respond({ ok: false, status: "error", message: err.message ?? String(err), columns: [], rows: [], rowCount: 0, executionTime: 0 });
+      console.error(`[server] ${req.method} ${url.pathname} —`, err);
+      return new Response(
+        JSON.stringify({ ok: false, status: "error", message: err.message ?? String(err), columns: [], rows: [], rowCount: 0, executionTime: 0 }),
+        { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": corsOrigin(req) } },
+      );
     }
   },
 
