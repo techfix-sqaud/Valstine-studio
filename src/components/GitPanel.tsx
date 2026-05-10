@@ -6,20 +6,36 @@ import {
   gitUnstage,
   gitCommit,
   gitPush,
+  gitPull,
   gitCheckout,
   gitCreatePR,
   gitLog,
   gitDiff,
+  gitAddRemote,
+  gitInit,
+  githubClone,
+  githubSchemaSql,
   GitFileStatus,
 } from "@/lib/api";
+import {
+  ghGetUser,
+  ghListRepos,
+  ghCreateRepo,
+  ghGetFile,
+  ghPushFile,
+  ghParseRepoUrl,
+  GHUser,
+  GHRepo,
+} from "@/lib/github";
+import { useAppStore } from "@/store/app-store";
 import {
   GitBranch,
   GitCommit,
   GitPullRequest,
   Plus,
-  Minus,
   RefreshCw,
   Upload,
+  Download,
   ChevronDown,
   ChevronRight,
   FileText,
@@ -28,6 +44,16 @@ import {
   AlertTriangle,
   Check,
   Eye,
+  Lock,
+  Globe,
+  Copy,
+  Database,
+  Trash2,
+  LogOut,
+  Search,
+  ArrowDown,
+  FolderDown,
+  CloudUpload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,8 +77,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
-import { useAppStore } from "@/store/app-store";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   M: { label: "Modified", color: "text-yellow-400" },
@@ -72,8 +100,20 @@ function statusInfo(s: string) {
   );
 }
 
+function toast(msg: string, type: "success" | "error" = "success") {
+  // Simple in-panel notification; a toast library would be ideal but this is self-contained
+  console[type === "error" ? "error" : "log"]("[GitPanel]", msg);
+}
+
 export default function GitPanel() {
-  const { addTab, setActiveTab } = useAppStore();
+  const { addTab, setActiveTab, githubToken, setGithubToken } = useAppStore();
+  const activeConn = useAppStore((s) =>
+    s.connections.find(
+      (c) => c.id === s.activeConnectionId && c.status === "connected",
+    ),
+  );
+
+  // ── Local git state ──────────────────────────────────────────────────
   const [branch, setBranch] = useState("");
   const [files, setFiles] = useState<GitFileStatus[]>([]);
   const [ahead, setAhead] = useState(0);
@@ -85,20 +125,49 @@ export default function GitPanel() {
   const [commitMsg, setCommitMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const [pushing, setPushing] = useState(false);
+  const [pulling, setPulling] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [notGit, setNotGit] = useState(false);
   const [changesOpen, setChangesOpen] = useState(true);
   const [logOpen, setLogOpen] = useState(false);
+
+  // ── GitHub state ─────────────────────────────────────────────────────
+  const [ghUser, setGhUser] = useState<GHUser | null>(null);
+  const [ghRepos, setGhRepos] = useState<GHRepo[]>([]);
+  const [ghLoading, setGhLoading] = useState(false);
+  const [ghError, setGhError] = useState("");
+  const [ghSearch, setGhSearch] = useState("");
+  const [ghOpen, setGhOpen] = useState(true);
+  const [tokenInput, setTokenInput] = useState("");
+
+  // ── Dialog state ─────────────────────────────────────────────────────
   const [prOpen, setPrOpen] = useState(false);
   const [prTitle, setPrTitle] = useState("");
   const [prBody, setPrBody] = useState("");
   const [prBase, setPrBase] = useState("main");
   const [prLoading, setPrLoading] = useState(false);
+
   const [newBranchOpen, setNewBranchOpen] = useState(false);
   const [newBranchName, setNewBranchName] = useState("");
 
+  const [createRepoOpen, setCreateRepoOpen] = useState(false);
+  const [newRepoName, setNewRepoName] = useState("");
+  const [newRepoDesc, setNewRepoDesc] = useState("");
+  const [newRepoPrivate, setNewRepoPrivate] = useState(false);
+  const [createRepoLoading, setCreateRepoLoading] = useState(false);
+
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const [cloneUrl, setCloneUrl] = useState("");
+  const [cloneDir, setCloneDir] = useState("");
+  const [cloneLoading, setCloneLoading] = useState(false);
+
+  const [pushSchemaOpen, setPushSchemaOpen] = useState(false);
+  const [pushSchemaRepo, setPushSchemaRepo] = useState<GHRepo | null>(null);
+  const [pushSchemaLoading, setPushSchemaLoading] = useState(false);
+
+  // ── Local git refresh ────────────────────────────────────────────────
   const refresh = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -111,7 +180,7 @@ export default function GitPanel() {
       ]);
       if (!statusRes.ok) {
         if (statusRes.error?.includes("Not a git")) setNotGit(true);
-        else setError(statusRes.error ?? "Failed to get status");
+        else setError(statusRes.error ?? "Failed to get git status");
         return;
       }
       setNotGit(false);
@@ -132,6 +201,53 @@ export default function GitPanel() {
     refresh();
   }, [refresh]);
 
+  // ── GitHub auth ──────────────────────────────────────────────────────
+  const loadGitHub = useCallback(async (token: string) => {
+    if (!token) {
+      setGhUser(null);
+      setGhRepos([]);
+      return;
+    }
+    setGhLoading(true);
+    setGhError("");
+    try {
+      const [user, repos] = await Promise.all([
+        ghGetUser(token),
+        ghListRepos(token),
+      ]);
+      setGhUser(user);
+      setGhRepos(repos);
+    } catch (e: any) {
+      setGhError(e.message ?? "Failed to authenticate with GitHub");
+      setGhUser(null);
+    } finally {
+      setGhLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (githubToken) loadGitHub(githubToken);
+  }, [githubToken, loadGitHub]);
+
+  async function handleGitHubLogin() {
+    const t = tokenInput.trim();
+    if (!t) return;
+    setGhLoading(true);
+    setGhError("");
+    try {
+      const user = await ghGetUser(t);
+      setGithubToken(t);
+      setGhUser(user);
+      setTokenInput("");
+      await loadGitHub(t);
+    } catch (e: any) {
+      setGhError(e.message ?? "Invalid token");
+    } finally {
+      setGhLoading(false);
+    }
+  }
+
+  // ── Local git actions ────────────────────────────────────────────────
   async function handleStage(paths: string[]) {
     const res = await gitStage(paths);
     if (!res.ok) setError(res.error ?? "Stage failed");
@@ -150,10 +266,9 @@ export default function GitPanel() {
     setError("");
     try {
       const res = await gitCommit(commitMsg);
-      if (!res.ok) {
-        setError(res.error ?? "Commit failed");
-      } else {
-        setSuccess("Committed!");
+      if (!res.ok) setError(res.error ?? "Commit failed");
+      else {
+        setSuccess("Committed successfully");
         setCommitMsg("");
         setTimeout(() => setSuccess(""), 3000);
         refresh();
@@ -169,11 +284,10 @@ export default function GitPanel() {
     setPushing(true);
     setError("");
     try {
-      const res = await gitPush(branch, true);
-      if (!res.ok) {
-        setError(res.error ?? "Push failed");
-      } else {
-        setSuccess("Pushed!");
+      const res = await gitPush(branch, ahead === 0 && behind === 0);
+      if (!res.ok) setError(res.error ?? "Push failed");
+      else {
+        setSuccess("Pushed to remote");
         setTimeout(() => setSuccess(""), 3000);
         refresh();
       }
@@ -181,6 +295,24 @@ export default function GitPanel() {
       setError(e.message);
     } finally {
       setPushing(false);
+    }
+  }
+
+  async function handlePull() {
+    setPulling(true);
+    setError("");
+    try {
+      const res = await gitPull();
+      if (!res.ok) setError(res.error ?? "Pull failed");
+      else {
+        setSuccess("Pulled from remote");
+        setTimeout(() => setSuccess(""), 3000);
+        refresh();
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setPulling(false);
     }
   }
 
@@ -216,10 +348,10 @@ export default function GitPanel() {
     setPrLoading(true);
     setError("");
     try {
+      await handlePush();
       const res = await gitCreatePR(prTitle, prBody, prBase);
-      if (!res.ok) {
-        setError(res.error ?? "Failed to create PR link");
-      } else if (res.prUrl) {
+      if (!res.ok) setError(res.error ?? "Failed to create PR link");
+      else if (res.prUrl) {
         window.open(res.prUrl, "_blank");
         setPrOpen(false);
         setPrTitle("");
@@ -250,15 +382,132 @@ export default function GitPanel() {
     } catch {}
   }
 
+  // ── GitHub actions ───────────────────────────────────────────────────
+  async function handleCreateRepo() {
+    if (!newRepoName.trim() || !githubToken) return;
+    setCreateRepoLoading(true);
+    try {
+      const repo = await ghCreateRepo(
+        githubToken,
+        newRepoName.trim(),
+        newRepoDesc.trim(),
+        newRepoPrivate,
+      );
+      setGhRepos((prev) => [repo, ...prev]);
+      setSuccess(`Repository "${repo.full_name}" created!`);
+      setTimeout(() => setSuccess(""), 4000);
+      setCreateRepoOpen(false);
+      setNewRepoName("");
+      setNewRepoDesc("");
+      setNewRepoPrivate(false);
+
+      // Offer to add as remote
+      if (!notGit) {
+        const addRemote = window.confirm(
+          `Add "${repo.clone_url}" as the "origin" remote for this workspace?`,
+        );
+        if (addRemote) {
+          await gitAddRemote("origin", repo.clone_url);
+          setSuccess(`Remote set to ${repo.full_name}. You can now push.`);
+          setTimeout(() => setSuccess(""), 4000);
+        }
+      }
+    } catch (e: any) {
+      setError(e.message ?? "Failed to create repository");
+    } finally {
+      setCreateRepoLoading(false);
+    }
+  }
+
+  async function handleClone() {
+    if (!cloneUrl.trim()) return;
+    setCloneLoading(true);
+    setError("");
+    try {
+      const res = await githubClone(
+        cloneUrl.trim(),
+        cloneDir.trim() || undefined,
+      );
+      if (!res.ok) setError(res.error ?? "Clone failed");
+      else {
+        setSuccess(`Cloned to ${res.clonedTo}`);
+        setTimeout(() => setSuccess(""), 5000);
+        setCloneOpen(false);
+        setCloneUrl("");
+        setCloneDir("");
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setCloneLoading(false);
+    }
+  }
+
+  async function handlePushSchema(repo: GHRepo) {
+    if (!activeConn || !githubToken) return;
+    setPushSchemaLoading(true);
+    setError("");
+    try {
+      const parsed = ghParseRepoUrl(repo.html_url);
+      if (!parsed) throw new Error("Cannot parse repo URL");
+
+      const schemaRes = await githubSchemaSql(activeConn);
+      if (!schemaRes.ok || !schemaRes.sql)
+        throw new Error(schemaRes.error ?? "Failed to export schema");
+
+      const filePath = `schema/${activeConn.database}.sql`;
+      const existing = await ghGetFile(
+        githubToken,
+        parsed.owner,
+        parsed.repo,
+        filePath,
+      );
+
+      await ghPushFile(
+        githubToken,
+        parsed.owner,
+        parsed.repo,
+        filePath,
+        schemaRes.sql,
+        `chore: update schema for ${activeConn.database} (${schemaRes.tableCount} tables)`,
+        existing?.sha,
+      );
+
+      setSuccess(`Schema pushed to ${repo.full_name}/${filePath} ✓`);
+      setTimeout(() => setSuccess(""), 5000);
+      setPushSchemaOpen(false);
+    } catch (e: any) {
+      setError(e.message ?? "Failed to push schema");
+    } finally {
+      setPushSchemaLoading(false);
+    }
+  }
+
+  const filteredRepos = ghRepos.filter(
+    (r) =>
+      !ghSearch ||
+      r.name.toLowerCase().includes(ghSearch.toLowerCase()) ||
+      r.description?.toLowerCase().includes(ghSearch.toLowerCase()),
+  );
+
+  // ── Not a git repo ───────────────────────────────────────────────────
   if (notGit) {
     return (
-      <div className="p-4 text-xs text-muted-foreground text-center">
-        <GitBranch className="w-5 h-5 mx-auto mb-2 opacity-40" />
+      <div className="p-4 text-xs text-muted-foreground text-center space-y-3">
+        <GitBranch className="w-5 h-5 mx-auto opacity-40" />
         <p>This workspace is not a Git repository.</p>
-        <p className="mt-1 text-[10px]">
-          Run <code className="bg-muted px-1 rounded">git init</code> to get
-          started.
-        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full text-xs"
+          onClick={async () => {
+            const res = await gitInit();
+            if (res.ok) refresh();
+            else setError(res.error ?? "git init failed");
+          }}
+        >
+          <GitBranch className="w-3 h-3 mr-1" /> Initialize Repository
+        </Button>
       </div>
     );
   }
@@ -283,7 +532,7 @@ export default function GitPanel() {
         </div>
 
         <div className="flex items-center gap-1.5">
-          <GitBranch className="w-3 h-3 text-muted-foreground" />
+          <GitBranch className="w-3 h-3 text-muted-foreground shrink-0" />
           <Select value={branch} onValueChange={handleCheckout}>
             <SelectTrigger className="h-6 text-xs flex-1 min-w-0">
               <SelectValue />
@@ -310,10 +559,19 @@ export default function GitPanel() {
         </div>
 
         {(ahead > 0 || behind > 0) && (
-          <div className="text-[10px] text-muted-foreground mt-1 pl-4">
-            {ahead > 0 && <span className="text-green-400">↑{ahead}</span>}
-            {ahead > 0 && behind > 0 && " "}
-            {behind > 0 && <span className="text-orange-400">↓{behind}</span>}
+          <div className="text-[10px] text-muted-foreground mt-1 pl-4 flex items-center gap-2">
+            {behind > 0 && (
+              <span className="text-orange-400 flex items-center gap-0.5">
+                <ArrowDown className="w-2.5 h-2.5" />
+                {behind} behind
+              </span>
+            )}
+            {ahead > 0 && (
+              <span className="text-green-400 flex items-center gap-0.5">
+                <Upload className="w-2.5 h-2.5" />
+                {ahead} ahead
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -323,21 +581,21 @@ export default function GitPanel() {
           {error && (
             <div className="text-xs text-red-400 bg-red-400/10 rounded p-2 flex items-start gap-1.5">
               <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
-              <span>{error}</span>
+              <span className="break-words">{error}</span>
             </div>
           )}
           {success && (
             <div className="text-xs text-green-400 bg-green-400/10 rounded p-2 flex items-center gap-1.5">
-              <Check className="w-3 h-3" />
-              {success}
+              <Check className="w-3 h-3 shrink-0" />
+              <span className="break-words">{success}</span>
             </div>
           )}
 
-          {/* Commit box */}
+          {/* Commit + push/pull row */}
           <div className="space-y-1.5">
             <Textarea
               className="text-xs min-h-[60px] resize-none"
-              placeholder="Commit message…"
+              placeholder="Commit message… (Ctrl+Enter to commit)"
               value={commitMsg}
               onChange={(e) => setCommitMsg(e.target.value)}
               onKeyDown={(e) => {
@@ -362,7 +620,21 @@ export default function GitPanel() {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs"
+                className="h-7 px-2 text-xs"
+                onClick={handlePull}
+                disabled={pulling}
+                title="Pull from remote"
+              >
+                {pulling ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Download className="w-3 h-3" />
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs"
                 onClick={handlePush}
                 disabled={pushing}
                 title="Push to remote"
@@ -376,7 +648,7 @@ export default function GitPanel() {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs"
+                className="h-7 px-2 text-xs"
                 onClick={() => {
                   setPrTitle("");
                   setPrBody("");
@@ -389,7 +661,9 @@ export default function GitPanel() {
             </div>
           </div>
 
-          {/* Changes */}
+          <Separator />
+
+          {/* Changed files */}
           <Collapsible open={changesOpen} onOpenChange={setChangesOpen}>
             <CollapsibleTrigger className="flex items-center gap-1 text-xs font-medium text-foreground w-full hover:text-foreground/80">
               {changesOpen ? (
@@ -399,9 +673,12 @@ export default function GitPanel() {
               )}
               Changes
               {files.length > 0 && (
-                <span className="ml-auto text-[10px] bg-muted rounded-full px-1.5 py-0.5">
+                <Badge
+                  variant="secondary"
+                  className="ml-auto text-[10px] h-4 px-1.5"
+                >
                   {files.length}
-                </span>
+                </Badge>
               )}
             </CollapsibleTrigger>
             <CollapsibleContent className="mt-1">
@@ -411,7 +688,6 @@ export default function GitPanel() {
                 </p>
               ) : (
                 <div className="space-y-0.5">
-                  {/* Stage All / Unstage All */}
                   <div className="flex justify-end gap-1 mb-1">
                     <Button
                       variant="ghost"
@@ -485,12 +761,12 @@ export default function GitPanel() {
                       className="px-2 py-1 rounded hover:bg-muted/40 text-xs"
                     >
                       <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-[10px] text-blue-400">
+                        <span className="font-mono text-[10px] text-blue-400 shrink-0">
                           {c.hash}
                         </span>
                         <span className="truncate flex-1">{c.message}</span>
                       </div>
-                      <div className="text-[10px] text-muted-foreground pl-[52px]">
+                      <div className="text-[10px] text-muted-foreground pl-10">
                         {c.author} — {c.date}
                       </div>
                     </div>
@@ -499,10 +775,238 @@ export default function GitPanel() {
               )}
             </CollapsibleContent>
           </Collapsible>
+
+          <Separator />
+
+          {/* ── GitHub Section ────────────────────────────────────────── */}
+          <Collapsible open={ghOpen} onOpenChange={setGhOpen}>
+            <CollapsibleTrigger className="flex items-center gap-1.5 text-xs font-medium text-foreground w-full hover:text-foreground/80">
+              {ghOpen ? (
+                <ChevronDown className="w-3 h-3" />
+              ) : (
+                <ChevronRight className="w-3 h-3" />
+              )}
+              {/* <Github className="w-3.5 h-3.5" /> */}
+              GitHub
+              {ghUser && (
+                <span className="ml-auto text-[10px] text-muted-foreground">
+                  {ghUser.login}
+                </span>
+              )}
+            </CollapsibleTrigger>
+            <CollapsibleContent className="mt-2">
+              {ghError && (
+                <div className="text-xs text-red-400 bg-red-400/10 rounded p-2 mb-2 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                  <span>{ghError}</span>
+                </div>
+              )}
+
+              {/* Not authenticated */}
+              {!githubToken && (
+                <div className="space-y-2">
+                  <p className="text-[10px] text-muted-foreground">
+                    Connect with a GitHub Personal Access Token (PAT) to create
+                    repos, push schemas, and clone.
+                  </p>
+                  <div className="flex gap-1">
+                    <Input
+                      type="password"
+                      className="h-7 text-xs flex-1"
+                      placeholder="ghp_xxxxxxxxxxxx"
+                      value={tokenInput}
+                      onChange={(e) => setTokenInput(e.target.value)}
+                      onKeyDown={(e) =>
+                        e.key === "Enter" && handleGitHubLogin()
+                      }
+                    />
+                    <Button
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={handleGitHubLogin}
+                      disabled={!tokenInput.trim() || ghLoading}
+                    >
+                      {ghLoading ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        "Connect"
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Needs <code className="bg-muted px-0.5 rounded">repo</code>{" "}
+                    + <code className="bg-muted px-0.5 rounded">read:user</code>{" "}
+                    scopes.
+                  </p>
+                </div>
+              )}
+
+              {/* Authenticated */}
+              {githubToken && ghUser && (
+                <div className="space-y-3">
+                  {/* User card */}
+                  <div className="flex items-center gap-2 p-2 bg-muted/40 rounded-md">
+                    <img
+                      src={ghUser.avatar_url}
+                      alt={ghUser.login}
+                      className="w-6 h-6 rounded-full"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">
+                        {ghUser.name ?? ghUser.login}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        @{ghUser.login} · {ghRepos.length} repos
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setGithubToken("");
+                        setGhUser(null);
+                        setGhRepos([]);
+                      }}
+                      className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors"
+                      title="Disconnect"
+                    >
+                      <LogOut className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-[11px] justify-start"
+                      onClick={() => setCreateRepoOpen(true)}
+                    >
+                      <Plus className="w-3 h-3 mr-1" /> New Repo
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-[11px] justify-start"
+                      onClick={() => setCloneOpen(true)}
+                    >
+                      <FolderDown className="w-3 h-3 mr-1" /> Clone
+                    </Button>
+                    {activeConn && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[11px] justify-start col-span-2"
+                        onClick={() => setPushSchemaOpen(true)}
+                      >
+                        <CloudUpload className="w-3 h-3 mr-1" />
+                        Push Schema to GitHub
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Repos list */}
+                  <div>
+                    <div className="relative mb-1.5">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                      <Input
+                        className="h-6 text-xs pl-6"
+                        placeholder="Filter repos…"
+                        value={ghSearch}
+                        onChange={(e) => setGhSearch(e.target.value)}
+                      />
+                    </div>
+                    {ghLoading && (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="space-y-0.5 max-h-64 overflow-y-auto">
+                      {filteredRepos.map((repo) => (
+                        <div
+                          key={repo.id}
+                          className="flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-muted/40 group text-xs cursor-default"
+                        >
+                          {repo.private ? (
+                            <Lock className="w-3 h-3 text-orange-400 shrink-0" />
+                          ) : (
+                            <Globe className="w-3 h-3 text-blue-400 shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="truncate font-medium">{repo.name}</p>
+                            {repo.description && (
+                              <p className="truncate text-[10px] text-muted-foreground">
+                                {repo.description}
+                              </p>
+                            )}
+                          </div>
+                          <div className="hidden group-hover:flex gap-0.5 shrink-0">
+                            <button
+                              title="Copy clone URL"
+                              className="p-0.5 hover:bg-muted rounded"
+                              onClick={() =>
+                                navigator.clipboard.writeText(repo.clone_url)
+                              }
+                            >
+                              <Copy className="w-2.5 h-2.5" />
+                            </button>
+                            <button
+                              title="Open on GitHub"
+                              className="p-0.5 hover:bg-muted rounded"
+                              onClick={() =>
+                                window.open(repo.html_url, "_blank")
+                              }
+                            >
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </button>
+                            <button
+                              title="Clone this repo"
+                              className="p-0.5 hover:bg-muted rounded"
+                              onClick={() => {
+                                setCloneUrl(repo.clone_url);
+                                setCloneOpen(true);
+                              }}
+                            >
+                              <FolderDown className="w-2.5 h-2.5" />
+                            </button>
+                            {activeConn && (
+                              <button
+                                title="Push schema to this repo"
+                                className="p-0.5 hover:bg-muted rounded text-blue-400"
+                                onClick={() => {
+                                  setPushSchemaRepo(repo);
+                                  handlePushSchema(repo);
+                                }}
+                              >
+                                <CloudUpload className="w-2.5 h-2.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {filteredRepos.length === 0 && !ghLoading && (
+                        <p className="text-[10px] text-muted-foreground px-2 py-2">
+                          No repositories found
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full h-6 text-[10px] mt-1"
+                      onClick={() => loadGitHub(githubToken)}
+                    >
+                      <RefreshCw className="w-2.5 h-2.5 mr-1" /> Refresh repos
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CollapsibleContent>
+          </Collapsible>
         </div>
       </ScrollArea>
 
-      {/* New Branch dialog */}
+      {/* ── Dialogs ─────────────────────────────────────────────────── */}
+
+      {/* New Branch */}
       <Dialog open={newBranchOpen} onOpenChange={setNewBranchOpen}>
         <DialogContent className="sm:max-w-[360px]">
           <DialogHeader>
@@ -528,7 +1032,7 @@ export default function GitPanel() {
         </DialogContent>
       </Dialog>
 
-      {/* PR Dialog */}
+      {/* PR */}
       <Dialog open={prOpen} onOpenChange={setPrOpen}>
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
@@ -564,24 +1068,20 @@ export default function GitPanel() {
               </label>
               <Textarea
                 className="text-xs min-h-[80px] resize-none"
-                placeholder="Optional description…"
+                placeholder="Optional…"
                 value={prBody}
                 onChange={(e) => setPrBody(e.target.value)}
               />
             </div>
             <p className="text-[10px] text-muted-foreground">
-              From <strong>{branch}</strong> → <strong>{prBase}</strong>. This
-              will push your branch and open a PR page in your browser.
+              From <strong>{branch}</strong> → <strong>{prBase}</strong>
             </p>
           </div>
           <DialogFooter>
             <Button
               size="sm"
               className="text-xs"
-              onClick={async () => {
-                await handlePush();
-                await handleCreatePR();
-              }}
+              onClick={handleCreatePR}
               disabled={!prTitle.trim() || prLoading}
             >
               {prLoading ? (
@@ -590,6 +1090,207 @@ export default function GitPanel() {
                 <ExternalLink className="w-3 h-3 mr-1" />
               )}
               Push & Open PR
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create GitHub Repo */}
+      <Dialog open={createRepoOpen} onOpenChange={setCreateRepoOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-1.5">
+              {/* <Github className="w-4 h-4" /> Create GitHub Repository */}
+              Create GitHub Repository
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-[10px] text-muted-foreground uppercase mb-1 block">
+                Repository Name *
+              </label>
+              <Input
+                className="text-xs"
+                placeholder="my-db-schemas"
+                value={newRepoName}
+                onChange={(e) => setNewRepoName(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground uppercase mb-1 block">
+                Description
+              </label>
+              <Input
+                className="text-xs"
+                placeholder="Database schema repository…"
+                value={newRepoDesc}
+                onChange={(e) => setNewRepoDesc(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setNewRepoPrivate(!newRepoPrivate)}
+                className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded border transition-colors ${newRepoPrivate ? "border-orange-400/50 bg-orange-400/10 text-orange-400" : "border-border text-muted-foreground"}`}
+              >
+                {newRepoPrivate ? (
+                  <Lock className="w-3 h-3" />
+                ) : (
+                  <Globe className="w-3 h-3" />
+                )}
+                {newRepoPrivate ? "Private" : "Public"}
+              </button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              onClick={() => setCreateRepoOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="text-xs"
+              onClick={handleCreateRepo}
+              disabled={!newRepoName.trim() || createRepoLoading}
+            >
+              {createRepoLoading ? (
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+              ) : (
+                // <Github className="w-3 h-3 mr-1" />
+                <p></p>
+              )}
+              Create Repository
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clone */}
+      <Dialog open={cloneOpen} onOpenChange={setCloneOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-1.5">
+              <FolderDown className="w-4 h-4" /> Clone Repository
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              The repo will be cloned on the server at the specified path.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-[10px] text-muted-foreground uppercase mb-1 block">
+                Repository URL *
+              </label>
+              <Input
+                className="text-xs"
+                placeholder="https://github.com/owner/repo.git"
+                value={cloneUrl}
+                onChange={(e) => setCloneUrl(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground uppercase mb-1 block">
+                Target Directory (optional)
+              </label>
+              <Input
+                className="text-xs"
+                placeholder="~/valstine-repos/repo-name"
+                value={cloneDir}
+                onChange={(e) => setCloneDir(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              onClick={() => setCloneOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="text-xs"
+              onClick={handleClone}
+              disabled={!cloneUrl.trim() || cloneLoading}
+            >
+              {cloneLoading ? (
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+              ) : (
+                <FolderDown className="w-3 h-3 mr-1" />
+              )}
+              Clone
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Push Schema */}
+      <Dialog open={pushSchemaOpen} onOpenChange={setPushSchemaOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-1.5">
+              <CloudUpload className="w-4 h-4" /> Push Schema to GitHub
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Exports the active database schema as SQL and pushes it to a
+              GitHub repository under <code>schema/</code>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {activeConn && (
+              <div className="flex items-center gap-2 p-2 bg-muted/40 rounded">
+                <Database className="w-3.5 h-3.5 text-muted-foreground" />
+                <div>
+                  <p className="text-xs font-medium">{activeConn.name}</p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {activeConn.database}
+                  </p>
+                </div>
+              </div>
+            )}
+            <div className="max-h-48 overflow-y-auto space-y-0.5">
+              {filteredRepos.map((repo) => (
+                <button
+                  key={repo.id}
+                  onClick={() => setPushSchemaRepo(repo)}
+                  className={`flex items-center gap-2 w-full px-2 py-1.5 rounded text-xs text-left transition-colors ${pushSchemaRepo?.id === repo.id ? "bg-primary/15 text-primary" : "hover:bg-muted/40"}`}
+                >
+                  {repo.private ? (
+                    <Lock className="w-3 h-3 shrink-0" />
+                  ) : (
+                    <Globe className="w-3 h-3 shrink-0" />
+                  )}
+                  <span className="truncate">{repo.full_name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              onClick={() => setPushSchemaOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="text-xs"
+              onClick={() => pushSchemaRepo && handlePushSchema(pushSchemaRepo)}
+              disabled={!pushSchemaRepo || pushSchemaLoading}
+            >
+              {pushSchemaLoading ? (
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+              ) : (
+                <CloudUpload className="w-3 h-3 mr-1" />
+              )}
+              Push Schema
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,6 +1,9 @@
 import { DBConnection, DBType } from './mock-data';
 
-// Builds the connection payload the server expects
+const isElectron =
+  typeof window !== 'undefined' && !!(window as any).electronAPI?.isElectron;
+
+// Builds the full connection payload (used for test-connection on unsaved connections)
 function toPayload(conn: DBConnection) {
   return {
     type: conn.type,
@@ -14,14 +17,28 @@ function toPayload(conn: DBConnection) {
   };
 }
 
-async function post<T = any>(path: string, body: unknown): Promise<T> {
+// Returns either connectionId (for saved connections without password) or full payload.
+// Passwords are stored server-side; if the connection has no password in state, use connectionId.
+function toBody(conn: DBConnection): { connectionId: string } | { connection: ReturnType<typeof toPayload> } {
+  if (!conn.password) return { connectionId: conn.id };
+  return { connection: toPayload(conn) };
+}
+
+// In Electron the renderer has no HTTP server — route through IPC instead.
+async function ipcCall<T = any>(action: string, payload: unknown): Promise<T> {
+  return (window as any).electronAPI.dbQuery(action, payload);
+}
+
+async function request<T = any>(method: string, path: string, body?: unknown): Promise<T> {
+  if (isElectron) {
+    const action = path.replace(/^\/api\//, '');
+    return ipcCall<T>(action, body ?? {});
+  }
   let res: Response;
   try {
-    res = await fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const opts: RequestInit = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body !== undefined) opts.body = JSON.stringify(body);
+    res = await fetch(path, opts);
   } catch {
     throw new Error('Cannot reach the server. Is the backend running?');
   }
@@ -33,31 +50,39 @@ async function post<T = any>(path: string, body: unknown): Promise<T> {
   } catch {
     throw new Error(`Server returned invalid JSON (HTTP ${res.status}): ${text.slice(0, 200)}`);
   }
-  if (!res.ok && parsed.error) {
-    throw new Error(parsed.error);
-  }
+  if (!res.ok && parsed.error) throw new Error(parsed.error);
   return parsed;
 }
 
+async function post<T = any>(path: string, body: unknown): Promise<T> {
+  return request<T>('POST', path, body);
+}
+
+async function get<T = any>(path: string): Promise<T> {
+  return request<T>('GET', path);
+}
+
 export async function testConnection(conn: DBConnection): Promise<{ ok: boolean; error?: string }> {
-  return post('/api/test-connection', { connection: toPayload(conn) });
+  // Use connectionId when available so the server resolves the encrypted password from SQLite.
+  // Fall back to full payload only for unsaved/in-memory connections (password present in state).
+  return post('/api/test-connection', toBody(conn));
 }
 
 export async function disconnectConnection(conn: DBConnection): Promise<{ ok: boolean }> {
-  return post('/api/disconnect', { connection: toPayload(conn) });
+  return post('/api/disconnect', toBody(conn));
 }
 
 export async function executeQuery(conn: DBConnection, query: string) {
-  return post('/api/execute', { connection: toPayload(conn), query });
+  return post('/api/execute', { ...toBody(conn), query });
 }
 
 export async function fetchDatabases(conn: DBConnection): Promise<string[]> {
-  const r = await post<{ databases: string[] }>('/api/databases', { connection: toPayload(conn) });
+  const r = await post<{ databases: string[] }>('/api/databases', toBody(conn));
   return r.databases ?? [];
 }
 
 export async function fetchSchemas(conn: DBConnection): Promise<string[]> {
-  const r = await post<{ schemas: string[] }>('/api/schemas', { connection: toPayload(conn) });
+  const r = await post<{ schemas: string[] }>('/api/schemas', toBody(conn));
   return r.schemas ?? [];
 }
 
@@ -68,7 +93,7 @@ export interface RemoteTableInfo {
 }
 
 export async function fetchTables(conn: DBConnection, schema?: string): Promise<RemoteTableInfo[]> {
-  const r = await post<{ tables: RemoteTableInfo[] }>('/api/tables', { connection: toPayload(conn), schema });
+  const r = await post<{ tables: RemoteTableInfo[] }>('/api/tables', { ...toBody(conn), schema });
   return r.tables ?? [];
 }
 
@@ -81,33 +106,33 @@ export interface RemoteColumnInfo {
 }
 
 export async function fetchColumns(conn: DBConnection, table: string, schema?: string): Promise<RemoteColumnInfo[]> {
-  const r = await post<{ columns: RemoteColumnInfo[] }>('/api/columns', { connection: toPayload(conn), table, schema });
+  const r = await post<{ columns: RemoteColumnInfo[] }>('/api/columns', { ...toBody(conn), table, schema });
   return r.columns ?? [];
 }
 
 export async function fetchRowCount(conn: DBConnection, table: string, schema?: string): Promise<number> {
-  const r = await post<{ count: number }>('/api/row-count', { connection: toPayload(conn), table, schema });
+  const r = await post<{ count: number }>('/api/row-count', { ...toBody(conn), table, schema });
   return r.count ?? -1;
 }
 
 export async function createDatabase(conn: DBConnection, name: string): Promise<{ ok: boolean; error?: string }> {
-  return post('/api/create-database', { connection: toPayload(conn), name });
+  return post('/api/create-database', { ...toBody(conn), name });
 }
 
 export async function dropDatabase(conn: DBConnection, name: string): Promise<{ ok: boolean; error?: string }> {
-  return post('/api/drop-database', { connection: toPayload(conn), name });
+  return post('/api/drop-database', { ...toBody(conn), name });
 }
 
 export async function dropTable(conn: DBConnection, table: string, schema?: string): Promise<{ ok: boolean; error?: string }> {
-  return post('/api/drop-table', { connection: toPayload(conn), table, schema });
+  return post('/api/drop-table', { ...toBody(conn), table, schema });
 }
 
 export async function truncateTable(conn: DBConnection, table: string, schema?: string): Promise<{ ok: boolean; error?: string }> {
-  return post('/api/truncate-table', { connection: toPayload(conn), table, schema });
+  return post('/api/truncate-table', { ...toBody(conn), table, schema });
 }
 
 export async function createSchema(conn: DBConnection, name: string): Promise<{ ok: boolean; error?: string }> {
-  return post('/api/create-schema', { connection: toPayload(conn), name });
+  return post('/api/create-schema', { ...toBody(conn), name });
 }
 
 // ─── Schema comparison ───
@@ -139,30 +164,14 @@ export async function schemaDiff(
   targetSchema?: string,
 ): Promise<SchemaDiffResult> {
   return post('/api/schema-diff', {
-    source: toPayload(source),
-    target: toPayload(target),
+    ...( source.password ? { source: toPayload(source) } : { sourceConnectionId: source.id }),
+    ...( target.password ? { target: toPayload(target) } : { targetConnectionId: target.id }),
     sourceSchema,
     targetSchema,
   });
 }
 
 // ─── Git ───
-
-async function get<T = any>(path: string): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(path);
-  } catch {
-    throw new Error('Cannot reach the server. Is the backend running?');
-  }
-  const text = await res.text();
-  if (!text) throw new Error(`Server returned empty response (HTTP ${res.status})`);
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(`Server returned invalid JSON (HTTP ${res.status}): ${text.slice(0, 200)}`);
-  }
-}
 
 export interface GitFileStatus {
   status: string;
@@ -216,6 +225,98 @@ export async function gitCreatePR(title: string, body?: string, base?: string): 
 
 export async function gitLog(limit?: number): Promise<{ ok: boolean; commits: { hash: string; message: string; author: string; date: string }[]; error?: string }> {
   return post('/api/git/log', { limit });
+}
+
+export async function gitPull(): Promise<{ ok: boolean; result?: string; error?: string }> {
+  return post('/api/git/pull', {});
+}
+
+export async function gitAddRemote(name: string, remoteUrl: string): Promise<{ ok: boolean; error?: string }> {
+  return post('/api/git/add-remote', { name, url: remoteUrl });
+}
+
+export async function gitInit(cwd?: string): Promise<{ ok: boolean; result?: string; cwd?: string; error?: string }> {
+  return post('/api/git/init', { cwd });
+}
+
+// ─── GitHub proxy (server-side for clone; direct GitHub API calls go through github.ts) ───
+
+export async function githubClone(repoUrl: string, targetDir?: string): Promise<{ ok: boolean; clonedTo?: string; result?: string; error?: string }> {
+  return post('/api/github/clone', { repoUrl, targetDir });
+}
+
+export async function githubSchemaSql(conn: DBConnection): Promise<{ ok: boolean; sql?: string; tableCount?: number; error?: string }> {
+  return post('/api/github/schema-sql', toBody(conn));
+}
+
+// ─── App state (SQLite-backed, replaces localStorage) ───
+
+export async function appGetConnections(): Promise<DBConnection[]> {
+  const r = await get<{ ok: boolean; connections: DBConnection[] }>('/api/app/connections');
+  return r.connections ?? [];
+}
+
+export async function appSaveConnection(conn: DBConnection): Promise<{ ok: boolean; id?: string; error?: string }> {
+  return post('/api/app/connections', conn);
+}
+
+export async function appUpdateConnection(conn: DBConnection): Promise<{ ok: boolean; error?: string }> {
+  return request('PUT', `/api/app/connections/${conn.id}`, conn);
+}
+
+export async function appDeleteConnection(id: string): Promise<{ ok: boolean; error?: string }> {
+  return request('DELETE', `/api/app/connections/${id}`);
+}
+
+export async function appGetSettings(): Promise<Record<string, any>> {
+  const r = await get<{ ok: boolean; settings: Record<string, any> }>('/api/app/settings');
+  return r.settings ?? {};
+}
+
+export async function appUpdateSettings(settings: Record<string, any>): Promise<{ ok: boolean; error?: string }> {
+  return request('PUT', '/api/app/settings', settings);
+}
+
+export async function appGetHistory(): Promise<any[]> {
+  const r = await get<{ ok: boolean; history: any[] }>('/api/app/history');
+  return r.history ?? [];
+}
+
+export async function appAddHistoryEntry(entry: any): Promise<{ ok: boolean; error?: string }> {
+  return post('/api/app/history', entry);
+}
+
+export async function appDeleteHistoryEntry(id: string): Promise<{ ok: boolean; error?: string }> {
+  return request('DELETE', `/api/app/history/${id}`);
+}
+
+export async function appClearHistory(): Promise<{ ok: boolean; error?: string }> {
+  return request('DELETE', '/api/app/history');
+}
+
+// ─── ApiTester persistence (replaces localStorage) ───
+
+export interface SavedApiRequest {
+  id: string;
+  name: string;
+  method: string;
+  url: string;
+  headers: { key: string; value: string; enabled: boolean }[];
+  body: string;
+  savedAt: string;
+}
+
+export async function appGetApiRequests(): Promise<SavedApiRequest[]> {
+  const r = await get<{ ok: boolean; requests: SavedApiRequest[] }>('/api/app/api-requests');
+  return r.requests ?? [];
+}
+
+export async function appSaveApiRequest(req: SavedApiRequest): Promise<{ ok: boolean; id?: string; error?: string }> {
+  return post('/api/app/api-requests', req);
+}
+
+export async function appDeleteApiRequest(id: string): Promise<{ ok: boolean; error?: string }> {
+  return request('DELETE', `/api/app/api-requests/${id}`);
 }
 
 export const DB_TYPE_META: Record<DBType, { label: string; defaultPort: number; icon: string; color: string }> = {

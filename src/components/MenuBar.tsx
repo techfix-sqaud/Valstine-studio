@@ -26,6 +26,7 @@ function useMenus(): MenuDef[] {
     sidebarOpen,
     addTab,
     tabs,
+    openDashboardTab,
     openSchemaTab,
     setActiveBottomTab,
   } = useAppStore();
@@ -73,6 +74,10 @@ function useMenus(): MenuDef[] {
           label: "Command Palette...",
           shortcut: "⇧⌘P",
           action: toggleCommandPalette,
+        },
+        {
+          label: "View Dashboard",
+          action: openDashboardTab,
         },
         { label: "separator", separator: true },
         {

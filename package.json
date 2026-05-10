@@ -3,9 +3,13 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "packageManager": "bun@1.2.18",
   "description": "A powerful cross-platform database management studio",
   "author": "Valstine",
   "main": "dist-electron/main.js",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "concurrently \"bun run server\" \"vite\"",
     "dev:front": "vite",
@@ -17,16 +21,17 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "electron:dev": "concurrently \"vite\" \"npm run electron:watch\"",
-    "electron:watch": "tsc -p electron/tsconfig.json && electron .",
-    "electron:build": "vite build && tsc -p electron/tsconfig.json",
-    "electron:dist": "npm run electron:build && electron-builder",
-    "electron:dist:mac": "npm run electron:build && electron-builder --mac",
-    "electron:dist:win": "npm run electron:build && electron-builder --win",
-    "electron:dist:linux": "npm run electron:build && electron-builder --linux",
-    "version:patch": "npm version patch --no-git-tag-version && git add package.json && git commit -m \"chore: bump version to $(node -p require('./package.json').version)\"",
-    "version:minor": "npm version minor --no-git-tag-version && git add package.json && git commit -m \"chore: bump version to $(node -p require('./package.json').version)\"",
-    "version:major": "npm version major --no-git-tag-version && git add package.json && git commit -m \"chore: bump version to $(node -p require('./package.json').version)\""
+    "native:rebuild:electron": "bunx node@22 ./node_modules/@electron/rebuild/lib/cli.js -f -w better-sqlite3 -w node-pty",
+    "electron:dev": "bun run native:rebuild:electron && concurrently --kill-others-on-fail \"vite\" \"bun run electron:start-delayed\"",
+    "electron:start-delayed": "tsc -p electron/tsconfig.json && node -e \"const h=require('http');(function c(){h.get('http://localhost:8080',r=>{if(r.statusCode<500)require('child_process').spawn(require('electron'),['.'],{stdio:'inherit'})}).on('error',()=>setTimeout(c,500))})()\"",
+    "electron:build": "bun run native:rebuild:electron && vite build && tsc -p electron/tsconfig.json",
+    "electron:dist": "bun run electron:build && electron-builder",
+    "electron:dist:mac": "bun run electron:build && electron-builder --mac",
+    "electron:dist:win": "bun run electron:build && electron-builder --win",
+    "electron:dist:linux": "bun run electron:build && electron-builder --linux",
+    "version:patch": "version=$(bun run scripts/bump-version.mjs patch) && git add package.json && git commit -m \"chore: bump version to $version\"",
+    "version:minor": "version=$(bun run scripts/bump-version.mjs minor) && git add package.json && git commit -m \"chore: bump version to $version\"",
+    "version:major": "version=$(bun run scripts/bump-version.mjs major) && git add package.json && git commit -m \"chore: bump version to $version\""
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -59,12 +64,14 @@
     "@radix-ui/react-toggle-group": "^1.1.10",
     "@radix-ui/react-tooltip": "^1.2.7",
     "@tanstack/react-query": "^5.83.0",
+    "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^6.0.0",
     "better-sqlite3": "^12.8.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
+    "electron-updater": "^6.8.3",
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "knex": "^3.2.9",
@@ -72,6 +79,7 @@
     "monaco-editor": "^0.55.1",
     "mysql2": "^3.21.0",
     "next-themes": "^0.3.0",
+    "node-pty": "^1.1.0",
     "pg": "^8.20.0",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
@@ -90,6 +98,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
+    "@electron/rebuild": "^4.0.4",
     "@playwright/test": "^1.57.0",
     "@tailwindcss/typography": "^0.5.16",
     "@testing-library/jest-dom": "^6.6.0",
@@ -126,13 +135,24 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "node_modules/**/*",
+      "!node_modules/.cache/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**/*",
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/@mapbox/node-pre-gyp/**/*"
     ],
     "mac": {
       "target": ["dmg", "zip"],
       "icon": "public/icon.png",
       "category": "public.app-category.developer-tools",
-      "artifactName": "Valstine-Studio.${ext}"
+      "artifactName": "Valstine-Studio.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "win": {
       "target": ["nsis", "zip"],
@@ -149,6 +169,11 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "techfix-sqaud",
+      "repo": "Valstine-studio"
     }
   }
 }

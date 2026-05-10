@@ -1,6 +1,40 @@
 import { create } from 'zustand';
 import { DBConnection, QueryTab, QueryResult, defaultTabs } from '@/lib/mock-data';
 import * as api from '@/lib/api';
+import { DEFAULT_PRESET_ID, DEFAULT_TERMINAL_FONT, DEFAULT_TERMINAL_FONT_SIZE, getPresetById } from '@/lib/terminal-themes';
+
+export interface TerminalSettings {
+  presetId: string;
+  fontFamily: string;
+  fontSize: number;
+  // custom color overrides (only used when presetId === 'custom')
+  background: string;
+  foreground: string;
+  cursor: string;
+  selectionBackground: string;
+}
+
+export interface AppSettings {
+  terminal: TerminalSettings;
+  savePasswords: boolean;
+}
+
+function defaultTerminalSettings(): TerminalSettings {
+  const preset = getPresetById(DEFAULT_PRESET_ID);
+  return {
+    presetId: DEFAULT_PRESET_ID,
+    fontFamily: DEFAULT_TERMINAL_FONT,
+    fontSize: DEFAULT_TERMINAL_FONT_SIZE,
+    background: preset.colors.background,
+    foreground: preset.colors.foreground,
+    cursor: preset.colors.cursor,
+    selectionBackground: preset.colors.selectionBackground,
+  };
+}
+
+function defaultSettings(): AppSettings {
+  return { terminal: defaultTerminalSettings(), savePasswords: false };
+}
 
 export interface QueryHistoryEntry {
   id: string;
@@ -21,29 +55,17 @@ export interface AIChatMessage {
   createdAt: string;
 }
 
-function buildAIResponse(prompt: string, state: Pick<AppState, 'tabs' | 'activeTabId' | 'activeConnectionId'>) {
-  const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
-  const activeQuery = activeTab?.content?.trim();
-  const promptLower = prompt.toLowerCase();
-
-  if ((promptLower.includes('explain') || promptLower.includes('what does')) && activeQuery) {
-    return `This query is working against ${state.activeConnectionId}. It currently looks focused on reading data rather than mutating it. I would review: selected columns, filtering predicates, sort order, and whether the result set needs a LIMIT.\n\nActive query snippet:\n${activeQuery.slice(0, 240)}`;
-  }
-
-  if ((promptLower.includes('optimize') || promptLower.includes('faster')) && activeQuery) {
-    return `For this query, the first things I would check are: indexes on WHERE and JOIN columns, whether ORDER BY can use an index, and whether you can reduce the selected columns or row count with a LIMIT.\n\nIf you want, ask me to optimize the active query and I’ll suggest a tighter SQL shape.`;
-  }
-
-  if (promptLower.includes('generate') || promptLower.includes('write sql')) {
-    return `Tell me the table names and the result you want, and I can draft SQL for you in this sidebar. Example: 'Generate SQL to show active users created in the last 30 days ordered by newest first.'`;
-  }
-
-  return `I can help with query explanation, SQL generation, optimization ideas, and schema navigation for ${state.activeConnectionId}. Ask about the active query or describe the result you want.`;
-}
-
 interface AppState {
   // Theme
   theme: 'light' | 'dark';
+
+  // GitHub
+  githubToken: string;
+  setGithubToken: (token: string) => Promise<void>;
+
+  // DigitalOcean AI agent token
+  doAiToken: string;
+  setDoAiToken: (token: string) => void;
 
   // Onboarding
   isFirstTime: boolean;
@@ -82,6 +104,13 @@ interface AppState {
   connectionDialogOpen: boolean;
   editingConnection: DBConnection | null;
 
+  // Settings panel
+  settingsPanelOpen: boolean;
+  settings: AppSettings;
+
+  // Provision dialog (create DB from scratch)
+  provisionDialogOpen: boolean;
+
   // Actions
   toggleTheme: () => void;
   toggleSidebar: () => void;
@@ -100,59 +129,88 @@ interface AppState {
   clearHistory: () => void;
   deleteHistoryEntry: (id: string) => void;
   loadHistoryQuery: (query: string) => void;
+  openDashboardTab: () => void;
   openSchemaTab: () => void;
+  openApiGeneratorTab: () => void;
+  openApiTesterTab: () => void;
   openAiSidebar: () => void;
   sendAiMessage: (prompt: string) => void;
   clearAiMessages: () => void;
   setSidebarOpen: (open: boolean) => void;
 
   // Connection management
-  addConnection: (conn: DBConnection) => void;
-  removeConnection: (id: string) => void;
-  updateConnection: (conn: DBConnection) => void;
+  addConnection: (conn: DBConnection) => Promise<void>;
+  removeConnection: (id: string) => Promise<void>;
+  updateConnection: (conn: DBConnection) => Promise<void>;
   connectConnection: (id: string) => Promise<{ ok: boolean; error?: string }>;
   disconnectConnection: (id: string) => Promise<void>;
   switchDatabase: (dbName: string) => Promise<void>;
   openConnectionDialog: (conn?: DBConnection) => void;
   closeConnectionDialog: () => void;
+
+  openSettingsPanel: () => void;
+  closeSettingsPanel: () => void;
+  updateSettings: (patch: Partial<AppSettings>) => void;
+  updateTerminalSettings: (patch: Partial<TerminalSettings>) => void;
+
+  openProvisionDialog: () => void;
+  closeProvisionDialog: () => void;
+
+  // Loads connections, settings, and history from server SQLite on app start
+  initApp: () => Promise<void>;
 }
 
-function loadHistory(): QueryHistoryEntry[] {
-  try {
-    const raw = localStorage.getItem('db-studio-history');
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+
+// ── Secure token helpers (no localStorage) ──────────────────────────────
+// Electron: delegate to OS keychain via the preload bridge.
+// Web: use sessionStorage (cleared on tab/window close, never persisted to disk).
+const electronAPI = typeof window !== 'undefined' ? (window as any).electronAPI : undefined;
+
+async function storeToken(key: string, value: string): Promise<void> {
+  if (electronAPI?.keychainSet) {
+    await electronAPI.keychainSet(key, value).catch(() => {});
+  } else if (typeof sessionStorage !== 'undefined') {
+    if (value) sessionStorage.setItem(key, value);
+    else sessionStorage.removeItem(key);
   }
 }
 
-function saveHistory(history: QueryHistoryEntry[]) {
-  localStorage.setItem('db-studio-history', JSON.stringify(history.slice(0, 200)));
-}
-
-function loadConnections(): DBConnection[] {
-  try {
-    const raw = localStorage.getItem('db-studio-connections');
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+async function loadToken(key: string): Promise<string> {
+  if (electronAPI?.keychainGet) {
+    return (await electronAPI.keychainGet(key).catch(() => null)) ?? '';
   }
+  if (typeof sessionStorage !== 'undefined') {
+    return sessionStorage.getItem(key) ?? '';
+  }
+  return '';
 }
 
-function saveConnections(conns: DBConnection[]) {
-  // Strip passwords before saving in localStorage for basic safety – user re-enters on connect
-  const safe = conns.map(c => ({ ...c, password: '' }));
-  localStorage.setItem('db-studio-connections', JSON.stringify(safe));
+async function removeToken(key: string): Promise<void> {
+  if (electronAPI?.keychainDelete) {
+    await electronAPI.keychainDelete(key).catch(() => {});
+  } else if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem(key);
+  }
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  theme: (typeof window !== 'undefined' && localStorage.getItem('db-studio-theme') as 'light' | 'dark') || 'dark',
-  isFirstTime: typeof window !== 'undefined' ? !localStorage.getItem('db-studio-onboarded') : true,
-  hasCompletedTour: typeof window !== 'undefined' ? !!localStorage.getItem('db-studio-tour-done') : false,
+  // Theme starts dark; initApp() will overwrite it from SQLite app_settings
+  theme: 'dark',
+  githubToken: '',
+  setGithubToken: async (token: string) => {
+    if (token) await storeToken('valstine-github-token', token);
+    else await removeToken('valstine-github-token');
+    set({ githubToken: token });
+  },
+  doAiToken: '',
+  setDoAiToken: (token: string) => { set({ doAiToken: token }); },
+  // isFirstTime / hasCompletedTour are loaded from SQLite by initApp()
+  isFirstTime: true,
+  hasCompletedTour: false,
   sidebarWidth: 260,
   sidebarOpen: true,
   activeSidebarTab: 'explorer',
-  connections: loadConnections(),
+  connections: [],
   activeConnectionId: '',
   tabs: defaultTabs,
   activeTabId: 'tab-1',
@@ -161,9 +219,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   queryResult: null,
   isExecuting: false,
   commandPaletteOpen: false,
-  queryHistory: loadHistory(),
+  queryHistory: [],
   connectionDialogOpen: false,
   editingConnection: null,
+  settingsPanelOpen: false,
+  settings: defaultSettings(),
+  provisionDialogOpen: false,
   aiMessages: [
     {
       id: 'ai-welcome',
@@ -176,7 +237,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   toggleTheme: () => set((s) => {
     const next = s.theme === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('db-studio-theme', next);
+    api.appUpdateSettings({ theme: next }).catch(() => {});
     document.documentElement.classList.toggle('dark', next === 'dark');
     return { theme: next };
   }),
@@ -233,7 +294,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         errorMessage: result.message,
       };
       const newHistory = [entry, ...get().queryHistory].slice(0, 200);
-      saveHistory(newHistory);
+      api.appAddHistoryEntry(entry).catch(() => {});
       set({ queryResult: result, isExecuting: false, queryHistory: newHistory });
     } catch (err: any) {
       const elapsed = Math.round(performance.now() - start);
@@ -257,7 +318,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         errorMessage: errorResult.message,
       };
       const newHistory = [entry, ...get().queryHistory].slice(0, 200);
-      saveHistory(newHistory);
+      api.appAddHistoryEntry(entry).catch(() => {});
       set({ queryResult: errorResult, isExecuting: false, queryHistory: newHistory });
     }
   },
@@ -279,41 +340,110 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
     return { tabs: [...s.tabs, tab], activeTabId: tab.id };
   }),
+  openApiGeneratorTab: () => set((s) => {
+    const existing = s.tabs.find((t) => t.type === 'api-generator');
+    if (existing) return { activeTabId: existing.id };
+    const tab: QueryTab = {
+      id: `api-generator-${Date.now()}`,
+      title: '.NET Generator',
+      content: '',
+      connectionId: s.activeConnectionId,
+      isDirty: false,
+      type: 'api-generator',
+    };
+    return { tabs: [...s.tabs, tab], activeTabId: tab.id };
+  }),
+  openApiTesterTab: () => set((s) => {
+    const existing = s.tabs.find((t) => t.type === 'api-tester');
+    if (existing) return { activeTabId: existing.id };
+    const tab: QueryTab = {
+      id: `api-tester-${Date.now()}`,
+      title: 'API Tester',
+      content: '',
+      connectionId: s.activeConnectionId,
+      isDirty: false,
+      type: 'api-tester',
+    };
+    return { tabs: [...s.tabs, tab], activeTabId: tab.id };
+  }),
   openAiSidebar: () => set({ activeSidebarTab: 'ai', sidebarOpen: true }),
-  sendAiMessage: (prompt) => {
+  sendAiMessage: async (prompt) => {
     const trimmedPrompt = prompt.trim();
-    if (!trimmedPrompt) {
-      return;
-    }
+    if (!trimmedPrompt) return;
 
-    const userMessage: AIChatMessage = {
+    const state = get();
+    const activeTab = state.tabs.find((t) => t.id === state.activeTabId);
+    const activeConn = state.connections.find((c) => c.id === state.activeConnectionId);
+
+    const userMsg: AIChatMessage = {
       id: `ai-user-${Date.now()}`,
       role: 'user',
       content: trimmedPrompt,
       createdAt: new Date().toISOString(),
     };
 
-    set((s) => ({
-      activeSidebarTab: 'ai',
-      sidebarOpen: true,
-      aiThinking: true,
-      aiMessages: [...s.aiMessages, userMessage],
-    }));
+    const updatedMessages = [...state.aiMessages, userMsg];
+    set({ activeSidebarTab: 'ai', sidebarOpen: true, aiThinking: true, aiMessages: updatedMessages });
 
-    window.setTimeout(() => {
-      const state = get();
-      const assistantMessage: AIChatMessage = {
-        id: `ai-assistant-${Date.now()}`,
-        role: 'assistant',
-        content: buildAIResponse(trimmedPrompt, state),
-        createdAt: new Date().toISOString(),
-      };
+    // Build context prefix to inject into the user message (DO agent disallows system role)
+    const contextParts: string[] = [];
+    if (activeConn) {
+      contextParts.push(`[Context: ${activeConn.name} (${activeConn.type.toUpperCase()}, db: ${activeConn.database}${activeConn.host ? `, host: ${activeConn.host}` : ''})]`);
+    }
+    if (activeTab?.content?.trim()) {
+      contextParts.push(`[Active SQL:\n\`\`\`sql\n${activeTab.content.trim().slice(0, 600)}\n\`\`\`]`);
+    }
 
+    // Inject context as a prefix on the first user message of this turn
+    const historyMessages = updatedMessages
+      .filter((m) => !m.id.startsWith('ai-welcome'))
+      .map((m) => ({ role: m.role, content: m.content }));
+
+    if (contextParts.length > 0 && historyMessages.length > 0) {
+      const last = historyMessages[historyMessages.length - 1];
+      if (last.role === 'user') {
+        historyMessages[historyMessages.length - 1] = {
+          ...last,
+          content: `${contextParts.join('\n')}\n\n${last.content}`,
+        };
+      }
+    }
+
+    const apiMessages = historyMessages;
+
+    try {
+      const res = await fetch('/api/ai-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: apiMessages }),
+      });
+      const data = (await res.json()) as { ok: boolean; content?: string; error?: string };
       set((s) => ({
         aiThinking: false,
-        aiMessages: [...s.aiMessages, assistantMessage],
+        aiMessages: [
+          ...s.aiMessages,
+          {
+            id: `ai-assistant-${Date.now()}`,
+            role: 'assistant' as const,
+            content: data.ok ? (data.content ?? '') : `Error: ${data.error}`,
+            createdAt: new Date().toISOString(),
+          },
+        ],
       }));
-    }, 500);
+    } catch (err: any) {
+      set((s) => ({
+        aiThinking: false,
+        aiMessages: [
+          ...s.aiMessages,
+          {
+            id: `ai-assistant-${Date.now()}`,
+            role: 'assistant' as const,
+            content: `Failed to reach AI agent: ${err.message ?? 'Network error'}`,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }));
+    }
   },
   clearAiMessages: () => set({
     aiThinking: false,
@@ -328,23 +458,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   completeOnboarding: () => {
-    localStorage.setItem('db-studio-onboarded', 'true');
+    api.appUpdateSettings({ onboarded: true }).catch(() => {});
     set({ isFirstTime: false });
   },
   completeTour: () => {
-    localStorage.setItem('db-studio-tour-done', 'true');
-    localStorage.setItem('db-studio-onboarded', 'true');
+    api.appUpdateSettings({ onboarded: true, tourDone: true }).catch(() => {});
     set({ hasCompletedTour: true, isFirstTime: false });
   },
   clearHistory: () => {
-    localStorage.removeItem('db-studio-history');
+    api.appClearHistory().catch(() => {});
     set({ queryHistory: [] });
   },
-  deleteHistoryEntry: (id) => set((s) => {
-    const newHistory = s.queryHistory.filter((h) => h.id !== id);
-    saveHistory(newHistory);
-    return { queryHistory: newHistory };
-  }),
+  deleteHistoryEntry: (id) => {
+    api.appDeleteHistoryEntry(id).catch(() => {});
+    set((s) => ({ queryHistory: s.queryHistory.filter((h) => h.id !== id) }));
+  },
   loadHistoryQuery: (query) => {
     const state = get();
     const id = `tab-${Date.now()}`;
@@ -353,32 +481,46 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeTabId: id,
     });
   },
+  openDashboardTab: () => set((s) => {
+    const existing = s.tabs.find((t) => t.type === 'dashboard');
+    if (existing) return { activeTabId: existing.id };
+    const tab: QueryTab = {
+      id: `dashboard-${Date.now()}`,
+      title: 'fleet_usage.vdash',
+      content: '',
+      connectionId: s.activeConnectionId || s.connections[0]?.id || '',
+      isDirty: false,
+      type: 'dashboard',
+    };
+    return { tabs: [...s.tabs, tab], activeTabId: tab.id };
+  }),
 
   // ── Connection management ──
-  addConnection: (conn) => {
-    const newConns = [...get().connections, conn];
-    saveConnections(newConns);
-    set({ connections: newConns, activeConnectionId: conn.id, connectionDialogOpen: false, editingConnection: null });
+  addConnection: async (conn) => {
+    await api.appSaveConnection(conn).catch(() => {});
+    // Refresh from server so we never hold passwords in state
+    const connections = await api.appGetConnections().catch(() => [...get().connections, { ...conn, password: '' }]);
+    set({ connections, activeConnectionId: conn.id, connectionDialogOpen: false, editingConnection: null });
   },
-  removeConnection: (id) => {
+  removeConnection: async (id) => {
+    await api.appDeleteConnection(id).catch(() => {});
     const newConns = get().connections.filter((c) => c.id !== id);
-    saveConnections(newConns);
     const newActive = get().activeConnectionId === id ? (newConns[0]?.id ?? '') : get().activeConnectionId;
     set({ connections: newConns, activeConnectionId: newActive });
   },
-  updateConnection: (conn) => {
-    const newConns = get().connections.map((c) => c.id === conn.id ? conn : c);
-    saveConnections(newConns);
-    set({ connections: newConns, connectionDialogOpen: false, editingConnection: null });
+  updateConnection: async (conn) => {
+    await api.appUpdateConnection(conn).catch(() => {});
+    const connections = await api.appGetConnections().catch(() =>
+      get().connections.map((c) => c.id === conn.id ? { ...conn, password: '' } : c)
+    );
+    set({ connections, connectionDialogOpen: false, editingConnection: null });
   },
   connectConnection: async (id) => {
     const conn = get().connections.find((c) => c.id === id);
     if (!conn) return { ok: false, error: 'Connection not found' };
     const result = await api.testConnection(conn);
     if (result.ok) {
-      const newConns = get().connections.map((c) => c.id === id ? { ...c, status: 'connected' as const } : c);
-      saveConnections(newConns);
-      set({ connections: newConns, activeConnectionId: id });
+      set((s) => ({ connections: s.connections.map((c) => c.id === id ? { ...c, status: 'connected' as const } : c), activeConnectionId: id }));
     }
     return result;
   },
@@ -386,30 +528,95 @@ export const useAppStore = create<AppState>((set, get) => ({
     const conn = get().connections.find((c) => c.id === id);
     if (conn) {
       await api.disconnectConnection(conn).catch(() => {});
-      const newConns = get().connections.map((c) => c.id === id ? { ...c, status: 'disconnected' as const } : c);
-      saveConnections(newConns);
-      set({ connections: newConns });
+      set((s) => ({ connections: s.connections.map((c) => c.id === id ? { ...c, status: 'disconnected' as const } : c) }));
     }
   },
   openConnectionDialog: (conn) => set({ connectionDialogOpen: true, editingConnection: conn ?? null }),
   closeConnectionDialog: () => set({ connectionDialogOpen: false, editingConnection: null }),
 
+  openSettingsPanel: () => set({ settingsPanelOpen: true }),
+  closeSettingsPanel: () => set({ settingsPanelOpen: false }),
+  updateSettings: (patch) => set((s) => {
+    const next = { ...s.settings, ...patch };
+    api.appUpdateSettings(next).catch(() => {});
+    return { settings: next };
+  }),
+  updateTerminalSettings: (patch) => set((s) => {
+    const next = { ...s.settings, terminal: { ...s.settings.terminal, ...patch } };
+    api.appUpdateSettings(next).catch(() => {});
+    return { settings: next };
+  }),
+
+  openProvisionDialog: () => set({ provisionDialogOpen: true }),
+  closeProvisionDialog: () => set({ provisionDialogOpen: false }),
+
   switchDatabase: async (dbName) => {
     const conn = get().connections.find((c) => c.id === get().activeConnectionId);
     if (!conn || conn.database === dbName) return;
-    // Disconnect old knex pool so a new one is created with the new DB
     await api.disconnectConnection(conn).catch(() => {});
     const updated: DBConnection = { ...conn, database: dbName, status: 'connected' as const };
-    const newConns = get().connections.map((c) => c.id === conn.id ? updated : c);
-    saveConnections(newConns);
-    set({ connections: newConns });
-    // Verify the new connection works
+    // Persist the new database name to server
+    await api.appUpdateConnection(updated).catch(() => {});
+    set((s) => ({ connections: s.connections.map((c) => c.id === conn.id ? updated : c) }));
     const result = await api.testConnection(updated);
     if (!result.ok) {
-      // Mark as disconnected if it failed
-      const conns2 = get().connections.map((c) => c.id === conn.id ? { ...c, database: dbName, status: 'disconnected' as const } : c);
-      saveConnections(conns2);
-      set({ connections: conns2 });
+      set((s) => ({ connections: s.connections.map((c) => c.id === conn.id ? { ...c, database: dbName, status: 'disconnected' as const } : c) }));
+    }
+  },
+
+  initApp: async () => {
+    try {
+      const [connections, rawSettings, history, githubToken] = await Promise.all([
+        api.appGetConnections(),
+        api.appGetSettings(),
+        api.appGetHistory(),
+        loadToken('valstine-github-token'),
+      ]);
+      const appSettings: AppSettings = {
+        terminal: { ...defaultTerminalSettings(), ...(rawSettings.terminal ?? {}) },
+        savePasswords: rawSettings.savePasswords ?? false,
+      };
+      const theme: 'light' | 'dark' = rawSettings.theme === 'light' ? 'light' : 'dark';
+      const isFirstTime = !rawSettings.onboarded;
+      const hasCompletedTour = !!rawSettings.tourDone;
+      document.documentElement.classList.toggle('dark', theme === 'dark');
+
+      // Determine the first previously-connected connection to make active
+      const prevActive = connections.find((c) => c.status === 'connected');
+      set({
+        connections,
+        settings: appSettings,
+        queryHistory: history,
+        theme,
+        isFirstTime,
+        hasCompletedTour,
+        githubToken,
+        activeConnectionId: prevActive?.id ?? connections[0]?.id ?? '',
+      });
+
+      // Silently verify each previously-connected connection. The server pool
+      // is re-created lazily on the first query anyway, so this is just a UI
+      // health check — if the remote DB is unreachable we flip it to disconnected.
+      const toVerify = connections.filter((c) => c.status === 'connected');
+      for (const conn of toVerify) {
+        api.testConnection(conn).then((result) => {
+          if (!result.ok) {
+            set((s) => ({
+              connections: s.connections.map((c) =>
+                c.id === conn.id ? { ...c, status: 'disconnected' as const } : c
+              ),
+            }));
+          }
+        }).catch(() => {
+          set((s) => ({
+            connections: s.connections.map((c) =>
+              c.id === conn.id ? { ...c, status: 'disconnected' as const } : c
+            ),
+          }));
+        });
+      }
+    } catch {
+      // Server not available — start with defaults (web dev without backend)
     }
   },
 }));

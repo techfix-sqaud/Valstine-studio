@@ -8,9 +8,14 @@ import { QueryEditor } from "@/components/QueryEditor";
 import { ResultsPanel } from "@/components/ResultsPanel";
 import { SchemaVisualization } from "@/components/SchemaVisualization";
 import SchemaDiffView from "@/components/SchemaDiffView";
+import { ApiGenerator } from "@/components/ApiGenerator";
+import { ApiTester } from "@/components/ApiTester";
+import { UsageDashboard } from "@/components/UsageDashboard";
 import { StatusBar } from "@/components/StatusBar";
 import { CommandPalette } from "@/components/CommandPalette";
 import { ConnectionDialog } from "@/components/ConnectionDialog";
+import { SettingsPanel } from "@/components/SettingsPanel";
+import { ProvisionDialog } from "@/components/ProvisionDialog";
 import { ContextMenuProvider } from "@/components/ContextMenu";
 import { useAppStore } from "@/store/app-store";
 import { useEffect } from "react";
@@ -28,13 +33,21 @@ const Index = () => {
     tabs,
     activeTabId,
     theme,
+    initApp,
   } = useAppStore();
   const isMobile = useIsMobile();
   const sidebarPanelRef = usePanelRef();
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
+  const isDashboardTab = activeTab?.type === "dashboard";
   const isSchemaTab = activeTab?.type === "schema";
   const isDiffTab = activeTab?.type === "schema-diff";
+  const isApiGeneratorTab = activeTab?.type === "api-generator";
+  const isApiTesterTab = activeTab?.type === "api-tester";
+
+  useEffect(() => {
+    initApp();
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -113,39 +126,46 @@ const Index = () => {
   }, [sidebarOpen, isMobile, sidebarPanelRef]);
 
   // Active tab content area
-  const editorContent =
-    isDiffTab && activeTab?.diffData ? (
-      <div className="h-full w-full">
-        <SchemaDiffView data={activeTab.diffData} />
+  const editorContent = isDashboardTab ? (
+    <div className="h-full w-full">
+      <UsageDashboard />
+    </div>
+  ) : isDiffTab && activeTab?.diffData ? (
+    <div className="h-full w-full">
+      <SchemaDiffView data={activeTab.diffData} />
+    </div>
+  ) : isSchemaTab ? (
+    <div className="h-full w-full">
+      <SchemaVisualization />
+    </div>
+  ) : isApiGeneratorTab ? (
+    <div className="h-full w-full">
+      <ApiGenerator />
+    </div>
+  ) : isApiTesterTab ? (
+    <div className="h-full w-full">
+      <ApiTester />
+    </div>
+  ) : (
+    <>
+      <EditorToolbar />
+      <div className="flex-1 min-h-0 min-w-0">
+        {bottomPanelVisible ? (
+          <Group orientation="vertical" id="editor-results" className="h-full">
+            <Panel id="editor-top" defaultSize={60} minSize={20}>
+              <QueryEditor />
+            </Panel>
+            <Separator />
+            <Panel id="results-bottom" defaultSize={40} minSize={10}>
+              <ResultsPanel />
+            </Panel>
+          </Group>
+        ) : (
+          <QueryEditor />
+        )}
       </div>
-    ) : isSchemaTab ? (
-      <div className="h-full w-full">
-        <SchemaVisualization />
-      </div>
-    ) : (
-      <>
-        <EditorToolbar />
-        <div className="flex-1 min-h-0 min-w-0">
-          {bottomPanelVisible ? (
-            <Group
-              orientation="vertical"
-              id="editor-results"
-              className="h-full"
-            >
-              <Panel id="editor-top" defaultSize={60} minSize={20}>
-                <QueryEditor />
-              </Panel>
-              <Separator />
-              <Panel id="results-bottom" defaultSize={40} minSize={10}>
-                <ResultsPanel />
-              </Panel>
-            </Group>
-          ) : (
-            <QueryEditor />
-          )}
-        </div>
-      </>
-    );
+    </>
+  );
 
   const editorArea = (
     <div className="flex flex-col h-full min-h-0 min-w-0">
@@ -203,6 +223,8 @@ const Index = () => {
         <StatusBar />
         <CommandPalette />
         <ConnectionDialog />
+        <SettingsPanel />
+        <ProvisionDialog />
       </div>
     </ContextMenuProvider>
   );

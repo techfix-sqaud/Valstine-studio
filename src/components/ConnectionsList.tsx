@@ -1,4 +1,4 @@
-import { Database, Plug, PlugZap, Plus } from "lucide-react";
+import { Database, Plug, PlugZap, Plus, HardDriveDownload } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 import { showContextMenu } from "./ContextMenu";
@@ -13,19 +13,29 @@ export function ConnectionsList() {
     disconnectConnection,
     removeConnection,
     openConnectionDialog,
+    openProvisionDialog,
   } = useAppStore();
 
   return (
     <div className="flex flex-col h-full">
       <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
         <span>Connections</span>
-        <button
-          onClick={() => openConnectionDialog()}
-          className="p-0.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
-          title="New Connection"
-        >
-          <Plus className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => openProvisionDialog()}
+            className="p-0.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+            title="Provision New Database"
+          >
+            <HardDriveDownload className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => openConnectionDialog()}
+            className="p-0.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+            title="New Connection"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {connections.length === 0 && (

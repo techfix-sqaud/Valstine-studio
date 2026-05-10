@@ -1,11 +1,37 @@
+import { useEffect, useState } from "react";
 import { GitBranch, Database, Wifi } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
-import { DB_TYPE_META } from "@/lib/api";
+import { DB_TYPE_META, gitStatus } from "@/lib/api";
 
 export function StatusBar() {
-  const { activeConnectionId, tabs, activeTabId, connections } = useAppStore();
+  const { activeConnectionId, connections } = useAppStore();
+  const [branchName, setBranchName] = useState<string | null>(null);
   const conn = connections.find((c) => c.id === activeConnectionId);
   const dbLabel = conn ? (DB_TYPE_META[conn.type]?.label ?? conn.type) : null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshBranch = async () => {
+      try {
+        const result = await gitStatus();
+        if (cancelled) return;
+        setBranchName(result.ok ? result.branch : null);
+      } catch {
+        if (!cancelled) setBranchName(null);
+      }
+    };
+
+    refreshBranch();
+    window.addEventListener("focus", refreshBranch);
+    document.addEventListener("visibilitychange", refreshBranch);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", refreshBranch);
+      document.removeEventListener("visibilitychange", refreshBranch);
+    };
+  }, []);
 
   return (
     <div className="h-6 bg-statusbar flex items-center justify-between px-2 text-statusbar-foreground text-[11px] shrink-0 select-none overflow-hidden">
@@ -26,7 +52,7 @@ export function StatusBar() {
         <span>SQL</span>
         <div className="flex items-center gap-1">
           <GitBranch className="w-3 h-3" />
-          <span>main</span>
+          <span>{branchName ?? "No repo"}</span>
         </div>
       </div>
     </div>

@@ -1,9 +1,81 @@
-import Editor from "@monaco-editor/react";
+import { useRef, useCallback } from "react";
+import Editor, { OnMount, BeforeMount } from "@monaco-editor/react";
+import type * as Monaco from "monaco-editor";
 import { useAppStore } from "@/store/app-store";
+import { registerSQLCompletion } from "@/lib/sql-completion";
+import { useSchemaCache } from "@/hooks/use-schema-cache";
 
 export function QueryEditor() {
   const { tabs, activeTabId, updateTabContent, theme } = useAppStore();
   const activeTab = tabs.find((t) => t.id === activeTabId);
+
+  const { cacheRef, fetchColumnsForTable } = useSchemaCache();
+  const completionDisposable = useRef<Monaco.IDisposable | null>(null);
+
+  // Stable refs so the completion provider closure never goes stale
+  const getCacheFn = useCallback(() => cacheRef.current, [cacheRef]);
+  const fetchColumnsFn = useCallback(fetchColumnsForTable, [fetchColumnsForTable]);
+
+  const beforeMount: BeforeMount = (monaco) => {
+    monaco.editor.defineTheme("dbstudio-dark", {
+      base: "vs-dark",
+      inherit: true,
+      rules: [
+        { token: "keyword", foreground: "569cd6", fontStyle: "bold" },
+        { token: "string", foreground: "ce9178" },
+        { token: "number", foreground: "b5cea8" },
+        { token: "comment", foreground: "6a9955", fontStyle: "italic" },
+        { token: "operator", foreground: "d4d4d4" },
+        { token: "type", foreground: "4ec9b0" },
+      ],
+      colors: {
+        "editor.background": "#1e2228",
+        "editor.foreground": "#d4d4d4",
+        "editorLineNumber.foreground": "#4a5568",
+        "editorLineNumber.activeForeground": "#a0aec0",
+        "editor.selectionBackground": "#264f78",
+        "editor.lineHighlightBackground": "#252a33",
+        "editorCursor.foreground": "#528bff",
+        "editorWhitespace.foreground": "#3b4048",
+        "editorIndentGuide.background": "#3b4048",
+        "editor.selectionHighlightBackground": "#264f7844",
+      },
+    });
+    monaco.editor.defineTheme("dbstudio-light", {
+      base: "vs",
+      inherit: true,
+      rules: [
+        { token: "keyword", foreground: "0000ff", fontStyle: "bold" },
+        { token: "string", foreground: "a31515" },
+        { token: "number", foreground: "098658" },
+        { token: "comment", foreground: "008000", fontStyle: "italic" },
+        { token: "operator", foreground: "333333" },
+        { token: "type", foreground: "267f99" },
+      ],
+      colors: {
+        "editor.background": "#f8f8f8",
+        "editor.foreground": "#333333",
+        "editorLineNumber.foreground": "#999999",
+        "editorLineNumber.activeForeground": "#333333",
+        "editor.selectionBackground": "#add6ff",
+        "editor.lineHighlightBackground": "#f0f0f0",
+        "editorCursor.foreground": "#0066cc",
+        "editorWhitespace.foreground": "#cccccc",
+        "editorIndentGuide.background": "#dddddd",
+        "editor.selectionHighlightBackground": "#add6ff44",
+      },
+    });
+  };
+
+  const handleMount: OnMount = (_editor, monaco) => {
+    // Clean up any previous provider registration (theme switch recreates editor)
+    completionDisposable.current?.dispose();
+    completionDisposable.current = registerSQLCompletion(
+      monaco,
+      getCacheFn,
+      fetchColumnsFn,
+    );
+  };
 
   if (!activeTab) {
     return (
@@ -21,56 +93,8 @@ export function QueryEditor() {
         language="sql"
         theme={theme === "dark" ? "dbstudio-dark" : "dbstudio-light"}
         onChange={(v) => updateTabContent(activeTab.id, v ?? "")}
-        beforeMount={(monaco) => {
-          monaco.editor.defineTheme("dbstudio-dark", {
-            base: "vs-dark",
-            inherit: true,
-            rules: [
-              { token: "keyword", foreground: "569cd6", fontStyle: "bold" },
-              { token: "string", foreground: "ce9178" },
-              { token: "number", foreground: "b5cea8" },
-              { token: "comment", foreground: "6a9955", fontStyle: "italic" },
-              { token: "operator", foreground: "d4d4d4" },
-              { token: "type", foreground: "4ec9b0" },
-            ],
-            colors: {
-              "editor.background": "#1e2228",
-              "editor.foreground": "#d4d4d4",
-              "editorLineNumber.foreground": "#4a5568",
-              "editorLineNumber.activeForeground": "#a0aec0",
-              "editor.selectionBackground": "#264f78",
-              "editor.lineHighlightBackground": "#252a33",
-              "editorCursor.foreground": "#528bff",
-              "editorWhitespace.foreground": "#3b4048",
-              "editorIndentGuide.background": "#3b4048",
-              "editor.selectionHighlightBackground": "#264f7844",
-            },
-          });
-          monaco.editor.defineTheme("dbstudio-light", {
-            base: "vs",
-            inherit: true,
-            rules: [
-              { token: "keyword", foreground: "0000ff", fontStyle: "bold" },
-              { token: "string", foreground: "a31515" },
-              { token: "number", foreground: "098658" },
-              { token: "comment", foreground: "008000", fontStyle: "italic" },
-              { token: "operator", foreground: "333333" },
-              { token: "type", foreground: "267f99" },
-            ],
-            colors: {
-              "editor.background": "#f8f8f8",
-              "editor.foreground": "#333333",
-              "editorLineNumber.foreground": "#999999",
-              "editorLineNumber.activeForeground": "#333333",
-              "editor.selectionBackground": "#add6ff",
-              "editor.lineHighlightBackground": "#f0f0f0",
-              "editorCursor.foreground": "#0066cc",
-              "editorWhitespace.foreground": "#cccccc",
-              "editorIndentGuide.background": "#dddddd",
-              "editor.selectionHighlightBackground": "#add6ff44",
-            },
-          });
-        }}
+        beforeMount={beforeMount}
+        onMount={handleMount}
         options={{
           fontSize: 13,
           fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
@@ -89,6 +113,13 @@ export function QueryEditor() {
           suggest: {
             showKeywords: true,
             showSnippets: true,
+            // Ensure our custom provider fires even without typing a full word
+            filterGraceful: true,
+          },
+          quickSuggestions: {
+            other: true,
+            comments: false,
+            strings: false,
           },
           wordWrap: "off",
           tabSize: 2,

@@ -8,116 +8,117 @@ permissions:
   contents: write
 
 jobs:
+  # ── 1. Generate a dev version (auto patch + dev suffix) ───────────────
   version:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate dev version
+        id: meta
+        run: |
+          BASE=$(node -p "require('./package.json').version" | awk -F. '{print $1"."$2}')
+          DEV_VERSION="${BASE}.0-dev.${{ github.run_number }}"
+          echo "version=${DEV_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${DEV_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Releasing: v${DEV_VERSION}"
+
+  # ── 2. Create a draft pre-release ─────────────────────────────────────
+  create-release:
+    needs: version
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate dev version
-        id: version
-        run: |
-          BASE=$(node -p "require('./package.json').version")
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          DEV_VERSION="${BASE}-dev.${GITHUB_RUN_NUMBER}"
-          echo "version=${DEV_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=v${DEV_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "🏷️ Dev release: v${DEV_VERSION} (${SHORT_SHA})"
+      - name: Create draft pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: "Valstine Studio ${{ needs.version.outputs.tag }}"
+          draft: true
+          prerelease: true
+          body: |
+            ## Valstine Studio ${{ needs.version.outputs.tag }} — Development Build
 
+            > ⚠️ **Pre-release** — built from `dev` branch. Not recommended for production use.
+
+            **Commit:** `${{ github.sha }}`
+            **Run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+            ---
+
+            ### 📦 Downloads
+
+            | Platform | Installer |
+            |----------|-----------|
+            | macOS | `Valstine-Studio.dmg` |
+            | Windows | `Valstine-Studio-Setup.exe` |
+            | Linux | `Valstine-Studio.AppImage` |
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── 3. Build and upload (all platforms in parallel) ───────────────────
   build:
-    needs: version
+    needs: [version, create-release]
     strategy:
       matrix:
         include:
           - os: macos-latest
             platform: mac
-            artifact: Valstine-Studio.dmg
           - os: windows-latest
             platform: win
-            artifact: Valstine-Studio-Setup.exe
           - os: ubuntu-latest
             platform: linux
-            artifact: Valstine-Studio.AppImage
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - name: Setup Node (for electron-builder)
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Install dependencies
         run: bun install
 
-      # Stamp the dev version into package.json so the app reports it
-      - name: Set dev version
+      - name: Stamp dev version into package.json
         run: |
           node -e "
-            const pkg = require('./package.json');
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
             pkg.version = '${{ needs.version.outputs.version }}';
-            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
 
       - name: Build Electron app
         run: bun run electron:build
 
-      - name: Package for ${{ matrix.platform }}
-        run: npx electron-builder --${{ matrix.platform }} --publish never
+      - name: Package and publish to draft release
+        run: bunx electron-builder --${{ matrix.platform }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-${{ matrix.platform }}
-          path: release/${{ matrix.artifact }}
-          if-no-files-found: error
-
-  release:
+  # ── 4. Publish (un-draft) the pre-release ─────────────────────────────
+  publish:
     needs: [version, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-
-      - name: List artifacts
-        run: ls -la artifacts/
-
-      - name: Create GitHub Pre-Release
+      - name: Publish pre-release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
-          name: "Valstine Studio ${{ needs.version.outputs.tag }} (Dev)"
-          body: |
-            ## Valstine Studio ${{ needs.version.outputs.tag }} (Development)
-
-            ⚠️ **This is a development pre-release** — not recommended for production use.
-
-            **Commit:** `${{ github.sha }}`
-            **Branch:** `dev`
-
-            ### Downloads
-            | Platform | File |
-            |----------|------|
-            | macOS | `Valstine-Studio.dmg` |
-            | Windows | `Valstine-Studio-Setup.exe` |
-            | Linux | `Valstine-Studio.AppImage` |
-          files: artifacts/*
           draft: false
           prerelease: true
           make_latest: false

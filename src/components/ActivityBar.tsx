@@ -8,6 +8,8 @@ import {
   PanelLeft,
   ArrowRightLeft,
   GitBranch,
+  Braces,
+  Send,
 } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
 import { cn } from "@/lib/utils";
@@ -40,6 +42,8 @@ export function ActivityBar() {
     sidebarOpen,
     toggleSidebar,
     openSchemaTab,
+    openApiGeneratorTab,
+    openApiTesterTab,
   } = useAppStore();
 
   const handleClick = (id: SidebarTab) => {
@@ -78,6 +82,24 @@ export function ActivityBar() {
         className="w-10 h-10 flex items-center justify-center rounded-md transition-colors text-muted-foreground hover:text-foreground"
       >
         <Share2 className="w-5 h-5" />
+      </button>
+
+      {/* .NET Generator — opens as an editor tab */}
+      <button
+        onClick={openApiGeneratorTab}
+        title=".NET API Generator"
+        className="w-10 h-10 flex items-center justify-center rounded-md transition-colors text-muted-foreground hover:text-foreground"
+      >
+        <Braces className="w-5 h-5" />
+      </button>
+
+      {/* API Tester — opens as an editor tab */}
+      <button
+        onClick={openApiTesterTab}
+        title="API Tester"
+        className="w-10 h-10 flex items-center justify-center rounded-md transition-colors text-muted-foreground hover:text-foreground"
+      >
+        <Send className="w-5 h-5" />
       </button>
 
       <div className="mt-auto">
