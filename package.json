@@ -8,7 +8,7 @@
   "author": "Valstine",
   "main": "dist-electron/main.cjs",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "dev": "concurrently \"SERVER_PORT=3001 bun run server/index.ts\" \"vite\"",
