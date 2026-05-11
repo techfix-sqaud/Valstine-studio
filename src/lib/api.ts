@@ -25,12 +25,27 @@ function toBody(conn: DBConnection): { connectionId: string } | { connection: Re
 }
 
 // In Electron the renderer has no HTTP server — route through IPC instead.
+// DB/Git operations go through electronAPI.dbQuery (action-based channel map).
+// App-state operations (/api/app/*) go through electronAPI.appRequest (method+path).
 async function ipcCall<T = any>(action: string, payload: unknown): Promise<T> {
   return (window as any).electronAPI.dbQuery(action, payload);
 }
 
+async function appRequestIpc<T = any>(method: string, path: string, body?: unknown): Promise<T> {
+  return (window as any).electronAPI.appRequest(method, path, body ?? null);
+}
+
+// App-state paths that should be routed through the dedicated appRequest IPC channel
+// in Electron (not through the DB action map).
+const APP_STATE_PREFIX = '/api/app/';
+
 async function request<T = any>(method: string, path: string, body?: unknown): Promise<T> {
   if (isElectron) {
+    // App-state endpoints have a dedicated IPC handler with per-user SQLite storage
+    if (path.startsWith(APP_STATE_PREFIX)) {
+      return appRequestIpc<T>(method, path, body);
+    }
+    // DB / Git operations use the existing action-map channel
     const action = path.replace(/^\/api\//, '');
     return ipcCall<T>(action, body ?? {});
   }

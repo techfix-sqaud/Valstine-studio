@@ -17,17 +17,18 @@ import {
   githubSchemaSql,
   GitFileStatus,
 } from "@/lib/api";
-import {
-  ghGetUser,
-  ghListRepos,
-  ghCreateRepo,
-  ghGetFile,
-  ghPushFile,
-  ghParseRepoUrl,
-  GHUser,
-  GHRepo,
-} from "@/lib/github";
+import { ghGetFile, ghPushFile, ghParseRepoUrl } from "@/lib/github";
 import { useAppStore } from "@/store/app-store";
+import {
+  createSourceControlRepo,
+  getSourceControlProviderLabel,
+  loadSourceControlAccount,
+  sourceControlSupportsRepoPrivacy,
+  sourceControlSupportsSchemaPush,
+  type SourceControlConfig,
+  type SourceControlProfile,
+  type SourceControlRepo,
+} from "@/lib/source-control";
 import {
   GitBranch,
   GitCommit,
@@ -106,12 +107,27 @@ function toast(msg: string, type: "success" | "error" = "success") {
 }
 
 export default function GitPanel() {
-  const { addTab, setActiveTab, githubToken, setGithubToken } = useAppStore();
+  const {
+    addTab,
+    setActiveTab,
+    githubToken,
+    setGithubToken,
+    azureDevOpsToken,
+    setAzureDevOpsToken,
+  } = useAppStore();
+  const sourceControlSettings = useAppStore((s) => s.settings.sourceControl);
   const activeConn = useAppStore((s) =>
     s.connections.find(
       (c) => c.id === s.activeConnectionId && c.status === "connected",
     ),
   );
+  const providerLabel = getSourceControlProviderLabel(
+    sourceControlSettings.provider,
+  );
+  const activeProviderToken =
+    sourceControlSettings.provider === "azure-devops"
+      ? azureDevOpsToken
+      : githubToken;
 
   // ── Local git state ──────────────────────────────────────────────────
   const [branch, setBranch] = useState("");
@@ -133,9 +149,9 @@ export default function GitPanel() {
   const [changesOpen, setChangesOpen] = useState(true);
   const [logOpen, setLogOpen] = useState(false);
 
-  // ── GitHub state ─────────────────────────────────────────────────────
-  const [ghUser, setGhUser] = useState<GHUser | null>(null);
-  const [ghRepos, setGhRepos] = useState<GHRepo[]>([]);
+  // ── Cloud provider state ─────────────────────────────────────────────
+  const [ghUser, setGhUser] = useState<SourceControlProfile | null>(null);
+  const [ghRepos, setGhRepos] = useState<SourceControlRepo[]>([]);
   const [ghLoading, setGhLoading] = useState(false);
   const [ghError, setGhError] = useState("");
   const [ghSearch, setGhSearch] = useState("");
@@ -164,7 +180,8 @@ export default function GitPanel() {
   const [cloneLoading, setCloneLoading] = useState(false);
 
   const [pushSchemaOpen, setPushSchemaOpen] = useState(false);
-  const [pushSchemaRepo, setPushSchemaRepo] = useState<GHRepo | null>(null);
+  const [pushSchemaRepo, setPushSchemaRepo] =
+    useState<SourceControlRepo | null>(null);
   const [pushSchemaLoading, setPushSchemaLoading] = useState(false);
 
   // ── Local git refresh ────────────────────────────────────────────────
@@ -201,9 +218,14 @@ export default function GitPanel() {
     refresh();
   }, [refresh]);
 
-  // ── GitHub auth ──────────────────────────────────────────────────────
-  const loadGitHub = useCallback(async (token: string) => {
-    if (!token) {
+  // ── Cloud provider auth ──────────────────────────────────────────────
+  const loadProviderAccount = useCallback(async () => {
+    const config: SourceControlConfig = {
+      ...sourceControlSettings,
+      githubToken,
+      azureDevOpsToken,
+    };
+    if (!activeProviderToken) {
       setGhUser(null);
       setGhRepos([]);
       return;
@@ -211,35 +233,56 @@ export default function GitPanel() {
     setGhLoading(true);
     setGhError("");
     try {
-      const [user, repos] = await Promise.all([
-        ghGetUser(token),
-        ghListRepos(token),
-      ]);
-      setGhUser(user);
+      const { profile, repos } = await loadSourceControlAccount(config);
+      setGhUser(profile);
       setGhRepos(repos);
     } catch (e: any) {
-      setGhError(e.message ?? "Failed to authenticate with GitHub");
+      setGhError(e.message ?? `Failed to authenticate with ${providerLabel}`);
       setGhUser(null);
     } finally {
       setGhLoading(false);
     }
-  }, []);
+  }, [
+    activeProviderToken,
+    azureDevOpsToken,
+    githubToken,
+    providerLabel,
+    sourceControlSettings,
+  ]);
 
   useEffect(() => {
-    if (githubToken) loadGitHub(githubToken);
-  }, [githubToken, loadGitHub]);
+    if (activeProviderToken) loadProviderAccount();
+    else {
+      setGhUser(null);
+      setGhRepos([]);
+      setGhError("");
+    }
+  }, [activeProviderToken, loadProviderAccount]);
 
-  async function handleGitHubLogin() {
+  async function handleProviderLogin() {
     const t = tokenInput.trim();
     if (!t) return;
     setGhLoading(true);
     setGhError("");
     try {
-      const user = await ghGetUser(t);
-      setGithubToken(t);
-      setGhUser(user);
+      const config: SourceControlConfig = {
+        ...sourceControlSettings,
+        githubToken:
+          sourceControlSettings.provider === "github" ? t : githubToken,
+        azureDevOpsToken:
+          sourceControlSettings.provider === "azure-devops"
+            ? t
+            : azureDevOpsToken,
+      };
+      const { profile } = await loadSourceControlAccount(config);
+      if (sourceControlSettings.provider === "azure-devops") {
+        await setAzureDevOpsToken(t);
+      } else {
+        await setGithubToken(t);
+      }
+      setGhUser(profile);
       setTokenInput("");
-      await loadGitHub(t);
+      await loadProviderAccount();
     } catch (e: any) {
       setGhError(e.message ?? "Invalid token");
     } finally {
@@ -382,19 +425,28 @@ export default function GitPanel() {
     } catch {}
   }
 
-  // ── GitHub actions ───────────────────────────────────────────────────
+  // ── Cloud provider actions ───────────────────────────────────────────
   async function handleCreateRepo() {
-    if (!newRepoName.trim() || !githubToken) return;
+    if (!newRepoName.trim() || !activeProviderToken) return;
     setCreateRepoLoading(true);
     try {
-      const repo = await ghCreateRepo(
-        githubToken,
-        newRepoName.trim(),
-        newRepoDesc.trim(),
-        newRepoPrivate,
+      const repo = await createSourceControlRepo(
+        {
+          ...sourceControlSettings,
+          githubToken,
+          azureDevOpsToken,
+        },
+        {
+          name: newRepoName.trim(),
+          description: newRepoDesc.trim(),
+          isPrivate: newRepoPrivate,
+        },
       );
-      setGhRepos((prev) => [repo, ...prev]);
-      setSuccess(`Repository "${repo.full_name}" created!`);
+      setGhRepos((prev) => [
+        repo,
+        ...prev.filter((item) => item.id !== repo.id),
+      ]);
+      setSuccess(`Repository "${repo.fullName}" created!`);
       setTimeout(() => setSuccess(""), 4000);
       setCreateRepoOpen(false);
       setNewRepoName("");
@@ -404,11 +456,11 @@ export default function GitPanel() {
       // Offer to add as remote
       if (!notGit) {
         const addRemote = window.confirm(
-          `Add "${repo.clone_url}" as the "origin" remote for this workspace?`,
+          `Add "${repo.cloneUrl}" as the "origin" remote for this workspace?`,
         );
         if (addRemote) {
-          await gitAddRemote("origin", repo.clone_url);
-          setSuccess(`Remote set to ${repo.full_name}. You can now push.`);
+          await gitAddRemote("origin", repo.cloneUrl);
+          setSuccess(`Remote set to ${repo.fullName}. You can now push.`);
           setTimeout(() => setSuccess(""), 4000);
         }
       }
@@ -443,12 +495,18 @@ export default function GitPanel() {
     }
   }
 
-  async function handlePushSchema(repo: GHRepo) {
+  async function handlePushSchema(repo: SourceControlRepo) {
+    if (sourceControlSettings.provider !== "github") {
+      setError(
+        "Schema push is currently only supported for GitHub repositories.",
+      );
+      return;
+    }
     if (!activeConn || !githubToken) return;
     setPushSchemaLoading(true);
     setError("");
     try {
-      const parsed = ghParseRepoUrl(repo.html_url);
+      const parsed = ghParseRepoUrl(repo.htmlUrl);
       if (!parsed) throw new Error("Cannot parse repo URL");
 
       const schemaRes = await githubSchemaSql(activeConn);
@@ -473,7 +531,7 @@ export default function GitPanel() {
         existing?.sha,
       );
 
-      setSuccess(`Schema pushed to ${repo.full_name}/${filePath} ✓`);
+      setSuccess(`Schema pushed to ${repo.fullName}/${filePath} ✓`);
       setTimeout(() => setSuccess(""), 5000);
       setPushSchemaOpen(false);
     } catch (e: any) {
@@ -787,7 +845,7 @@ export default function GitPanel() {
                 <ChevronRight className="w-3 h-3" />
               )}
               {/* <Github className="w-3.5 h-3.5" /> */}
-              GitHub
+              {providerLabel}
               {ghUser && (
                 <span className="ml-auto text-[10px] text-muted-foreground">
                   {ghUser.login}
@@ -803,27 +861,39 @@ export default function GitPanel() {
               )}
 
               {/* Not authenticated */}
-              {!githubToken && (
+              {!activeProviderToken && (
                 <div className="space-y-2">
                   <p className="text-[10px] text-muted-foreground">
-                    Connect with a GitHub Personal Access Token (PAT) to create
-                    repos, push schemas, and clone.
+                    Connect with a {providerLabel} Personal Access Token to
+                    browse repos, create remotes, and use provider-specific
+                    helpers.
                   </p>
+                  {sourceControlSettings.provider === "azure-devops" &&
+                    !sourceControlSettings.azureOrganization.trim() && (
+                      <div className="text-[10px] text-amber-400 bg-amber-400/10 rounded p-2">
+                        Set your Azure DevOps organization in Settings before
+                        connecting.
+                      </div>
+                    )}
                   <div className="flex gap-1">
                     <Input
                       type="password"
                       className="h-7 text-xs flex-1"
-                      placeholder="ghp_xxxxxxxxxxxx"
+                      placeholder={
+                        sourceControlSettings.provider === "azure-devops"
+                          ? "ado_pat_xxxxxxxxxxxx"
+                          : "ghp_xxxxxxxxxxxx"
+                      }
                       value={tokenInput}
                       onChange={(e) => setTokenInput(e.target.value)}
                       onKeyDown={(e) =>
-                        e.key === "Enter" && handleGitHubLogin()
+                        e.key === "Enter" && handleProviderLogin()
                       }
                     />
                     <Button
                       size="sm"
                       className="h-7 text-xs"
-                      onClick={handleGitHubLogin}
+                      onClick={handleProviderLogin}
                       disabled={!tokenInput.trim() || ghLoading}
                     >
                       {ghLoading ? (
@@ -834,34 +904,44 @@ export default function GitPanel() {
                     </Button>
                   </div>
                   <p className="text-[10px] text-muted-foreground">
-                    Needs <code className="bg-muted px-0.5 rounded">repo</code>{" "}
-                    + <code className="bg-muted px-0.5 rounded">read:user</code>{" "}
-                    scopes.
+                    {sourceControlSettings.provider === "azure-devops"
+                      ? "Use a PAT with Code (Read & Write) scope."
+                      : "Needs repo + read:user scopes."}
                   </p>
                 </div>
               )}
 
               {/* Authenticated */}
-              {githubToken && ghUser && (
+              {activeProviderToken && ghUser && (
                 <div className="space-y-3">
                   {/* User card */}
                   <div className="flex items-center gap-2 p-2 bg-muted/40 rounded-md">
-                    <img
-                      src={ghUser.avatar_url}
-                      alt={ghUser.login}
-                      className="w-6 h-6 rounded-full"
-                    />
+                    {ghUser.avatarUrl ? (
+                      <img
+                        src={ghUser.avatarUrl}
+                        alt={ghUser.login}
+                        className="w-6 h-6 rounded-full"
+                      />
+                    ) : (
+                      <div className="w-6 h-6 rounded-full bg-primary/15 text-primary flex items-center justify-center text-[10px] font-semibold">
+                        {ghUser.displayName.slice(0, 1).toUpperCase()}
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">
-                        {ghUser.name ?? ghUser.login}
+                        {ghUser.displayName}
                       </p>
                       <p className="text-[10px] text-muted-foreground">
-                        @{ghUser.login} · {ghRepos.length} repos
+                        {ghUser.login} · {ghRepos.length} repos
                       </p>
                     </div>
                     <button
-                      onClick={() => {
-                        setGithubToken("");
+                      onClick={async () => {
+                        if (sourceControlSettings.provider === "azure-devops") {
+                          await setAzureDevOpsToken("");
+                        } else {
+                          await setGithubToken("");
+                        }
                         setGhUser(null);
                         setGhRepos([]);
                       }}
@@ -890,17 +970,20 @@ export default function GitPanel() {
                     >
                       <FolderDown className="w-3 h-3 mr-1" /> Clone
                     </Button>
-                    {activeConn && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-[11px] justify-start col-span-2"
-                        onClick={() => setPushSchemaOpen(true)}
-                      >
-                        <CloudUpload className="w-3 h-3 mr-1" />
-                        Push Schema to GitHub
-                      </Button>
-                    )}
+                    {activeConn &&
+                      sourceControlSupportsSchemaPush(
+                        sourceControlSettings.provider,
+                      ) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-[11px] justify-start col-span-2"
+                          onClick={() => setPushSchemaOpen(true)}
+                        >
+                          <CloudUpload className="w-3 h-3 mr-1" />
+                          Push Schema to GitHub
+                        </Button>
+                      )}
                   </div>
 
                   {/* Repos list */}
@@ -937,22 +1020,27 @@ export default function GitPanel() {
                                 {repo.description}
                               </p>
                             )}
+                            {repo.project && (
+                              <p className="truncate text-[10px] text-muted-foreground">
+                                {repo.project}
+                              </p>
+                            )}
                           </div>
                           <div className="hidden group-hover:flex gap-0.5 shrink-0">
                             <button
                               title="Copy clone URL"
                               className="p-0.5 hover:bg-muted rounded"
                               onClick={() =>
-                                navigator.clipboard.writeText(repo.clone_url)
+                                navigator.clipboard.writeText(repo.cloneUrl)
                               }
                             >
                               <Copy className="w-2.5 h-2.5" />
                             </button>
                             <button
-                              title="Open on GitHub"
+                              title={`Open on ${providerLabel}`}
                               className="p-0.5 hover:bg-muted rounded"
                               onClick={() =>
-                                window.open(repo.html_url, "_blank")
+                                window.open(repo.htmlUrl, "_blank")
                               }
                             >
                               <ExternalLink className="w-2.5 h-2.5" />
@@ -961,24 +1049,27 @@ export default function GitPanel() {
                               title="Clone this repo"
                               className="p-0.5 hover:bg-muted rounded"
                               onClick={() => {
-                                setCloneUrl(repo.clone_url);
+                                setCloneUrl(repo.cloneUrl);
                                 setCloneOpen(true);
                               }}
                             >
                               <FolderDown className="w-2.5 h-2.5" />
                             </button>
-                            {activeConn && (
-                              <button
-                                title="Push schema to this repo"
-                                className="p-0.5 hover:bg-muted rounded text-blue-400"
-                                onClick={() => {
-                                  setPushSchemaRepo(repo);
-                                  handlePushSchema(repo);
-                                }}
-                              >
-                                <CloudUpload className="w-2.5 h-2.5" />
-                              </button>
-                            )}
+                            {activeConn &&
+                              sourceControlSupportsSchemaPush(
+                                sourceControlSettings.provider,
+                              ) && (
+                                <button
+                                  title="Push schema to this repo"
+                                  className="p-0.5 hover:bg-muted rounded text-blue-400"
+                                  onClick={() => {
+                                    setPushSchemaRepo(repo);
+                                    handlePushSchema(repo);
+                                  }}
+                                >
+                                  <CloudUpload className="w-2.5 h-2.5" />
+                                </button>
+                              )}
                           </div>
                         </div>
                       ))}
@@ -992,7 +1083,8 @@ export default function GitPanel() {
                       variant="ghost"
                       size="sm"
                       className="w-full h-6 text-[10px] mt-1"
-                      onClick={() => loadGitHub(githubToken)}
+                      onClick={loadProviderAccount}
+                      disabled={!activeProviderToken}
                     >
                       <RefreshCw className="w-2.5 h-2.5 mr-1" /> Refresh repos
                     </Button>
@@ -1100,8 +1192,7 @@ export default function GitPanel() {
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle className="text-sm flex items-center gap-1.5">
-              {/* <Github className="w-4 h-4" /> Create GitHub Repository */}
-              Create GitHub Repository
+              Create {providerLabel} Repository
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
@@ -1127,19 +1218,28 @@ export default function GitPanel() {
                 onChange={(e) => setNewRepoDesc(e.target.value)}
               />
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setNewRepoPrivate(!newRepoPrivate)}
-                className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded border transition-colors ${newRepoPrivate ? "border-orange-400/50 bg-orange-400/10 text-orange-400" : "border-border text-muted-foreground"}`}
-              >
-                {newRepoPrivate ? (
-                  <Lock className="w-3 h-3" />
-                ) : (
-                  <Globe className="w-3 h-3" />
-                )}
-                {newRepoPrivate ? "Private" : "Public"}
-              </button>
-            </div>
+            {sourceControlSupportsRepoPrivacy(
+              sourceControlSettings.provider,
+            ) ? (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setNewRepoPrivate(!newRepoPrivate)}
+                  className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded border transition-colors ${newRepoPrivate ? "border-orange-400/50 bg-orange-400/10 text-orange-400" : "border-border text-muted-foreground"}`}
+                >
+                  {newRepoPrivate ? (
+                    <Lock className="w-3 h-3" />
+                  ) : (
+                    <Globe className="w-3 h-3" />
+                  )}
+                  {newRepoPrivate ? "Private" : "Public"}
+                </button>
+              </div>
+            ) : (
+              <p className="text-[10px] text-muted-foreground">
+                Azure DevOps repository visibility follows the project and
+                organization settings.
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button
@@ -1265,7 +1365,7 @@ export default function GitPanel() {
                   ) : (
                     <Globe className="w-3 h-3 shrink-0" />
                   )}
-                  <span className="truncate">{repo.full_name}</span>
+                  <span className="truncate">{repo.fullName}</span>
                 </button>
               ))}
             </div>

@@ -205,7 +205,7 @@ function getKnex(c: ConnectionPayload): DbLike {
           database: c.database,
           user: c.user ?? "",
           password: c.password ?? "",
-          ssl: c.ssl ? { rejectUnauthorized: false } : false,
+          ssl: c.ssl ? { rejectUnauthorized: true } : false,
         },
         pool: { min: 0, max: 5 },
       };
@@ -219,7 +219,7 @@ function getKnex(c: ConnectionPayload): DbLike {
           database: c.database,
           user: c.user ?? "",
           password: c.password ?? "",
-          ssl: c.ssl ? { rejectUnauthorized: false } : undefined,
+          ssl: c.ssl ? { rejectUnauthorized: true } : undefined,
         },
         pool: { min: 0, max: 5 },
       };
@@ -280,6 +280,45 @@ function resolveConnection(body: { connectionId?: string; connection?: Connectio
 // An empty/null origin (file://, Electron IPC) is always accepted.
 const EXTRA_ORIGIN = process.env.ALLOWED_ORIGIN ?? "";
 const ALLOWED_ORIGIN_RE = /^https?:\/\/localhost(:\d+)?$/;
+
+// Returns true if the request is coming from localhost — used to gate app-state
+// endpoints and prevent cross-user credential leakage when the server is exposed
+// to a network (e.g. cloud deployment).
+function isLocalhostRequest(req: Request): boolean {
+  // When running behind a reverse proxy, respect X-Forwarded-For only if
+  // TRUST_PROXY=1 is explicitly set (opt-in, not default).
+  if (process.env.TRUST_PROXY === "1") {
+    const xff = req.headers.get("x-forwarded-for");
+    if (xff) {
+      const first = xff.split(",")[0].trim();
+      return first === "127.0.0.1" || first === "::1";
+    }
+  }
+  // Bun does not expose the raw socket address on the Request object the same
+  // way Node does, so we rely on the Origin / Host header heuristic.  For a
+  // truly network-isolated deployment the admin should also configure a firewall.
+  const origin = req.headers.get("origin") ?? "";
+  const host = req.headers.get("host") ?? "";
+  if (origin && !ALLOWED_ORIGIN_RE.test(origin)) return false;
+  const hostName = host.split(":")[0];
+  return (
+    !origin || // no origin = direct / same-origin request (e.g. Electron)
+    hostName === "localhost" ||
+    hostName === "127.0.0.1" ||
+    hostName === "::1"
+  );
+}
+
+function requireLocalhost(req: Request): Response | null {
+  if (isLocalhostRequest(req)) return null; // allow
+  return new Response(
+    JSON.stringify({ ok: false, error: "This endpoint is only accessible from localhost." }),
+    {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    }
+  );
+}
 
 function corsOrigin(req: Request): string {
   const origin = req.headers.get("origin") ?? "";
@@ -1036,6 +1075,16 @@ Bun.serve({
         if (webUrl.includes("github.com")) {
           const baseBranch = base ?? "main";
           prUrl = `${webUrl}/compare/${baseBranch}...${current}?expand=1&title=${encodeURIComponent(title)}${prBody ? `&body=${encodeURIComponent(prBody)}` : ""}`;
+        } else if (webUrl.includes("dev.azure.com") || webUrl.includes("visualstudio.com")) {
+          const azureMatch = webUrl.match(/dev\.azure\.com\/([^/]+)\/([^/]+)\/_git\/([^/?#]+)/);
+          if (azureMatch) {
+            const [, organization, project, repo] = azureMatch;
+            const sourceRef = encodeURIComponent(`refs/heads/${current}`);
+            const targetRef = encodeURIComponent(`refs/heads/${base ?? "main"}`);
+            prUrl = `https://dev.azure.com/${organization}/${project}/_git/${repo}/pullrequestcreate?sourceRef=${sourceRef}&targetRef=${targetRef}`;
+          } else {
+            prUrl = webUrl;
+          }
         } else if (webUrl.includes("gitlab")) {
           prUrl = `${webUrl}/-/merge_requests/new?merge_request[source_branch]=${current}&merge_request[target_branch]=${base ?? "main"}&merge_request[title]=${encodeURIComponent(title)}`;
         } else {
@@ -1155,6 +1204,11 @@ Bun.serve({
       }
 
       // ─── App state endpoints (SQLite-backed, replaces localStorage) ───
+      // All /api/app/* routes are localhost-only to prevent cross-user data leakage.
+      if (url.pathname.startsWith("/api/app/")) {
+        const deny = requireLocalhost(req);
+        if (deny) return deny;
+      }
 
       // GET /api/app/connections
       if (req.method === "GET" && url.pathname === "/api/app/connections") {
@@ -1320,6 +1374,8 @@ Bun.serve({
 
       // POST /api/ai-chat — proxy to DigitalOcean AI agent (avoids browser CORS)
       if (req.method === "POST" && url.pathname === "/api/ai-chat") {
+          const denyAiChat = requireLocalhost(req);
+          if (denyAiChat) return denyAiChat;
         const { messages } = (await req.json()) as {
           messages: { role: string; content: string }[];
         };
@@ -1352,7 +1408,10 @@ Bun.serve({
       }
 
       // POST /api/provision — create a new database from scratch (Docker container or SQLite file)
+      // localhost-only: provisions infrastructure on the local machine.
       if (req.method === "POST" && url.pathname === "/api/provision") {
+        const denyProv = requireLocalhost(req);
+        if (denyProv) return denyProv;
         const body = (await req.json()) as {
           type: DBType;
           containerName?: string;
@@ -1445,7 +1504,10 @@ Bun.serve({
       }
 
       // POST /api/proxy — server-side HTTP relay for ApiTester (avoids browser CORS)
+      // localhost-only: prevents SSRF abuse when server is network-exposed.
       if (req.method === "POST" && url.pathname === "/api/proxy") {
+        const denyProxy = requireLocalhost(req);
+        if (denyProxy) return denyProxy;
         const { url: targetUrl, method, headers: reqHeaders, body: reqBody, timeout } =
           (await req.json()) as {
             url: string;

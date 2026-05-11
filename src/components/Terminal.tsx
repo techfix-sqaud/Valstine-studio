@@ -82,6 +82,10 @@ const TerminalComponent = () => {
         const cleanup = window.terminalAPI.onData((data: string) => term.write(data));
         if (typeof cleanup === "function") onDataCleanupRef.current = cleanup;
       }
+      // Tell the main process the listener is registered — it will write a newline
+      // to trigger a fresh shell prompt (fixes the initial-output timing race).
+      window.terminalAPI?.ready?.();
+
       const inputDisposable = term.onData((data) => window.terminalAPI?.sendInput?.(data));
       const ro = new ResizeObserver(doFit);
       ro.observe(containerRef.current!);

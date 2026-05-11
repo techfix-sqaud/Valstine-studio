@@ -92,6 +92,9 @@ const Index = () => {
       ),
     );
     cleanups.push(
+      api.onMenuEvent("menu:view-dashboard", () => store().openDashboardTab()),
+    );
+    cleanups.push(
       api.onMenuEvent("menu:toggle-sidebar", () => store().toggleSidebar()),
     );
     cleanups.push(
@@ -109,6 +112,15 @@ const Index = () => {
       api.onMenuEvent("menu:sidebar-tab", (tab: string) =>
         store().setActiveSidebarTab(tab as any),
       ),
+    );
+    cleanups.push(
+      api.onMenuEvent("menu:bottom-tab", (tab: string) => {
+        store().setActiveBottomTab(tab as any);
+        store().setBottomPanelVisible(true);
+      }),
+    );
+    cleanups.push(
+      api.onMenuEvent("menu:about", () => store().openSettingsPanel("about")),
     );
 
     return () => cleanups.forEach((fn) => fn());

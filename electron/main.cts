@@ -4,7 +4,7 @@ import path from 'node:path';
 import * as os from 'os';
 import * as pty from 'node-pty';
 import { readFileSync, existsSync } from 'node:fs';
-import { registerDbIPC } from './db-ipc.js';
+import { registerDbIPC } from './db-ipc.cjs';
 
 // Load .env from the project root so DO_AI_TOKEN etc. are available in process.env.
 // In dev: app.getAppPath() is the project root.
