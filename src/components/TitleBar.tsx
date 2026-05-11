@@ -3,8 +3,13 @@ import { useAppStore } from "@/store/app-store";
 import { MenuBar } from "./MenuBar";
 
 export function TitleBar() {
-  const { toggleCommandPalette, toggleTheme, theme, toggleSidebar, openSettingsPanel } =
-    useAppStore();
+  const {
+    toggleCommandPalette,
+    toggleTheme,
+    theme,
+    toggleSidebar,
+    openSettingsPanel,
+  } = useAppStore();
 
   return (
     <div
@@ -52,7 +57,7 @@ export function TitleBar() {
           )}
         </button>
         <button
-          onClick={openSettingsPanel}
+          onClick={() => openSettingsPanel()}
           className="p-1 hover:bg-secondary rounded transition-colors text-muted-foreground hover:text-foreground"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           title="Settings"

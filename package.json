@@ -6,9 +6,9 @@
   "packageManager": "bun@1.2.18",
   "description": "A powerful cross-platform database management studio",
   "author": "Valstine",
-  "main": "dist-electron/main.js",
+  "main": "dist-electron/main.cjs",
   "engines": {
-    "node": "22.x"
+    "node": ">=22"
   },
   "scripts": {
     "dev": "concurrently \"SERVER_PORT=3001 bun run server/index.ts\" \"vite\"",
@@ -97,8 +97,8 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "@eslint/js": "^9.32.0",
     "@electron/rebuild": "^4.0.4",
+    "@eslint/js": "^9.32.0",
     "@playwright/test": "^1.57.0",
     "@tailwindcss/typography": "^0.5.16",
     "@testing-library/jest-dom": "^6.6.0",
@@ -120,6 +120,7 @@
     "globals": "^15.15.0",
     "jsdom": "^20.0.3",
     "lovable-tagger": "^1.1.13",
+    "png-to-ico": "^3.0.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
@@ -146,7 +147,7 @@
     ],
     "mac": {
       "target": ["dmg", "zip"],
-      "icon": "public/icon.png",
+      "icon": "build/icon.icns",
       "category": "public.app-category.developer-tools",
       "artifactName": "Valstine-Studio.${ext}",
       "hardenedRuntime": true,
@@ -156,12 +157,12 @@
     },
     "win": {
       "target": ["nsis", "zip"],
-      "icon": "public/icon.png",
+      "icon": "build/icon.ico",
       "artifactName": "Valstine-Studio-Setup.${ext}"
     },
     "linux": {
       "target": ["AppImage", "deb"],
-      "icon": "public/icon.png",
+      "icon": "build/icon.iconset/icon_512x512.png",
       "category": "Development",
       "artifactName": "Valstine-Studio.${ext}",
       "maintainer": "Valstine Studio <support@valstine.com>"

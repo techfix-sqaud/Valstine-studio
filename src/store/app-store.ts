@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { DBConnection, QueryTab, QueryResult, defaultTabs } from '@/lib/mock-data';
 import * as api from '@/lib/api';
 import { DEFAULT_PRESET_ID, DEFAULT_TERMINAL_FONT, DEFAULT_TERMINAL_FONT_SIZE, getPresetById } from '@/lib/terminal-themes';
+import type { SourceControlProvider, SourceControlSettings } from '@/lib/source-control';
 
 export interface TerminalSettings {
   presetId: string;
@@ -17,6 +18,36 @@ export interface TerminalSettings {
 export interface AppSettings {
   terminal: TerminalSettings;
   savePasswords: boolean;
+  sourceControl: SourceControlSettings;
+  accounts: AccountSettings;
+}
+
+export type SettingsPanelSection = 'general' | 'terminal' | 'ai' | 'security' | 'about' | 'profile' | 'github' | 'version control' | 'cloud';
+
+export type AccountAuthProvider = 'microsoft' | 'github' | 'google' | 'email';
+
+export interface AccountProviderState {
+  status: 'signed-out' | 'authorized';
+  identifier: string;
+}
+
+export type AccountSettings = Record<AccountAuthProvider, AccountProviderState>;
+
+function defaultSourceControlSettings(): SourceControlSettings {
+  return {
+    provider: 'github',
+    azureOrganization: '',
+    azureProject: '',
+  };
+}
+
+function defaultAccountsSettings(): AccountSettings {
+  return {
+    microsoft: { status: 'signed-out', identifier: '' },
+    github: { status: 'signed-out', identifier: '' },
+    google: { status: 'signed-out', identifier: '' },
+    email: { status: 'signed-out', identifier: '' },
+  };
 }
 
 function defaultTerminalSettings(): TerminalSettings {
@@ -33,7 +64,12 @@ function defaultTerminalSettings(): TerminalSettings {
 }
 
 function defaultSettings(): AppSettings {
-  return { terminal: defaultTerminalSettings(), savePasswords: false };
+  return {
+    terminal: defaultTerminalSettings(),
+    savePasswords: false,
+    sourceControl: defaultSourceControlSettings(),
+    accounts: defaultAccountsSettings(),
+  };
 }
 
 export interface QueryHistoryEntry {
@@ -62,6 +98,10 @@ interface AppState {
   // GitHub
   githubToken: string;
   setGithubToken: (token: string) => Promise<void>;
+
+  // Azure DevOps
+  azureDevOpsToken: string;
+  setAzureDevOpsToken: (token: string) => Promise<void>;
 
   // DigitalOcean AI agent token
   doAiToken: string;
@@ -106,6 +146,7 @@ interface AppState {
 
   // Settings panel
   settingsPanelOpen: boolean;
+  settingsPanelSection: SettingsPanelSection;
   settings: AppSettings;
 
   // Provision dialog (create DB from scratch)
@@ -148,10 +189,13 @@ interface AppState {
   openConnectionDialog: (conn?: DBConnection) => void;
   closeConnectionDialog: () => void;
 
-  openSettingsPanel: () => void;
+  openSettingsPanel: (section?: SettingsPanelSection) => void;
+  setSettingsPanelSection: (section: SettingsPanelSection) => void;
   closeSettingsPanel: () => void;
   updateSettings: (patch: Partial<AppSettings>) => void;
   updateTerminalSettings: (patch: Partial<TerminalSettings>) => void;
+  updateSourceControlSettings: (patch: Partial<SourceControlSettings>) => void;
+  updateAccountProvider: (provider: AccountAuthProvider, patch: Partial<AccountProviderState>) => void;
 
   openProvisionDialog: () => void;
   closeProvisionDialog: () => void;
@@ -202,6 +246,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     else await removeToken('valstine-github-token');
     set({ githubToken: token });
   },
+  azureDevOpsToken: '',
+  setAzureDevOpsToken: async (token: string) => {
+    if (token) await storeToken('valstine-azure-devops-token', token);
+    else await removeToken('valstine-azure-devops-token');
+    set({ azureDevOpsToken: token });
+  },
   doAiToken: '',
   setDoAiToken: (token: string) => { set({ doAiToken: token }); },
   // isFirstTime / hasCompletedTour are loaded from SQLite by initApp()
@@ -213,7 +263,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   connections: [],
   activeConnectionId: '',
   tabs: defaultTabs,
-  activeTabId: 'tab-1',
+  activeTabId: 'dashboard-1',
   bottomPanelVisible: true,
   activeBottomTab: 'results',
   queryResult: null,
@@ -223,6 +273,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   connectionDialogOpen: false,
   editingConnection: null,
   settingsPanelOpen: false,
+  settingsPanelSection: 'general',
   settings: defaultSettings(),
   provisionDialogOpen: false,
   aiMessages: [
@@ -412,12 +463,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     const apiMessages = historyMessages;
 
     try {
-      const res = await fetch('/api/ai-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages }),
-      });
-      const data = (await res.json()) as { ok: boolean; content?: string; error?: string };
+      // In Electron there is no HTTP server — route through IPC so the main
+      // process can make the outbound fetch with the DO_AI_TOKEN env var.
+      let data: { ok: boolean; content?: string; error?: string };
+      if (electronAPI?.aiChat) {
+        data = await electronAPI.aiChat(apiMessages);
+      } else {
+        const res = await fetch('/api/ai-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: apiMessages }),
+        });
+        data = (await res.json()) as { ok: boolean; content?: string; error?: string };
+      }
       set((s) => ({
         aiThinking: false,
         aiMessages: [
@@ -534,7 +592,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   openConnectionDialog: (conn) => set({ connectionDialogOpen: true, editingConnection: conn ?? null }),
   closeConnectionDialog: () => set({ connectionDialogOpen: false, editingConnection: null }),
 
-  openSettingsPanel: () => set({ settingsPanelOpen: true }),
+  openSettingsPanel: (section = 'general') => set({ settingsPanelOpen: true, settingsPanelSection: section }),
+  setSettingsPanelSection: (section) => set({ settingsPanelSection: section }),
   closeSettingsPanel: () => set({ settingsPanelOpen: false }),
   updateSettings: (patch) => set((s) => {
     const next = { ...s.settings, ...patch };
@@ -543,6 +602,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   }),
   updateTerminalSettings: (patch) => set((s) => {
     const next = { ...s.settings, terminal: { ...s.settings.terminal, ...patch } };
+    api.appUpdateSettings(next).catch(() => {});
+    return { settings: next };
+  }),
+  updateSourceControlSettings: (patch) => set((s) => {
+    const next = {
+      ...s.settings,
+      sourceControl: { ...s.settings.sourceControl, ...patch },
+    };
+    api.appUpdateSettings(next).catch(() => {});
+    return { settings: next };
+  }),
+  updateAccountProvider: (provider, patch) => set((s) => {
+    const next = {
+      ...s.settings,
+      accounts: {
+        ...s.settings.accounts,
+        [provider]: {
+          ...s.settings.accounts[provider],
+          ...patch,
+        },
+      },
+    };
     api.appUpdateSettings(next).catch(() => {});
     return { settings: next };
   }),
@@ -566,15 +647,25 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   initApp: async () => {
     try {
-      const [connections, rawSettings, history, githubToken] = await Promise.all([
-        api.appGetConnections(),
-        api.appGetSettings(),
-        api.appGetHistory(),
-        loadToken('valstine-github-token'),
+      const [connections, rawSettings, history, githubToken, azureDevOpsToken] = await Promise.all([
+        api.appGetConnections().catch(() => [] as any[]),
+        api.appGetSettings().catch(() => ({} as Record<string, any>)),
+        api.appGetHistory().catch(() => [] as any[]),
+        loadToken('valstine-github-token').catch(() => ''),
+        loadToken('valstine-azure-devops-token').catch(() => ''),
       ]);
       const appSettings: AppSettings = {
         terminal: { ...defaultTerminalSettings(), ...(rawSettings.terminal ?? {}) },
         savePasswords: rawSettings.savePasswords ?? false,
+        sourceControl: {
+          ...defaultSourceControlSettings(),
+          ...(rawSettings.sourceControl ?? {}),
+          provider: (rawSettings.sourceControl?.provider === 'azure-devops' ? 'azure-devops' : 'github') as SourceControlProvider,
+        },
+        accounts: {
+          ...defaultAccountsSettings(),
+          ...(rawSettings.accounts ?? {}),
+        },
       };
       const theme: 'light' | 'dark' = rawSettings.theme === 'light' ? 'light' : 'dark';
       const isFirstTime = !rawSettings.onboarded;
@@ -583,7 +674,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // Determine the first previously-connected connection to make active
       const prevActive = connections.find((c) => c.status === 'connected');
-      set({
+      const firstId = prevActive?.id ?? connections[0]?.id ?? '';
+      set((s) => ({
         connections,
         settings: appSettings,
         queryHistory: history,
@@ -591,8 +683,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         isFirstTime,
         hasCompletedTour,
         githubToken,
-        activeConnectionId: prevActive?.id ?? connections[0]?.id ?? '',
-      });
+        azureDevOpsToken,
+        activeConnectionId: firstId,
+        // Resolve any tabs that still hold the empty/stale default connectionId
+        tabs: s.tabs.map((t) =>
+          (!t.connectionId || t.connectionId === 'conn-1') ? { ...t, connectionId: firstId } : t
+        ),
+      }));
 
       // Silently verify each previously-connected connection. The server pool
       // is re-created lazily on the first query anyway, so this is just a UI

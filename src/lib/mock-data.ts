@@ -143,7 +143,7 @@ export const defaultTabs: QueryTab[] = [
     id: 'dashboard-1',
     title: 'fleet_usage.vdash',
     content: '',
-    connectionId: 'conn-1',
+    connectionId: '',
     isDirty: false,
     type: 'dashboard',
   },
