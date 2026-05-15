@@ -2,6 +2,46 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
+const VITE_FS_DENY = ['.env', '.env.*', '*.{crt,pem}', '**/.git/**'];
+const SAFE_DOT_SEGMENTS = new Set(['.vite', '.well-known']);
+
+function isSensitiveRequest(rawUrl: string): boolean {
+  try {
+    const pathname = decodeURIComponent(new URL(rawUrl, 'http://vite.local').pathname);
+    if (pathname.startsWith('/public/')) return true;
+
+    return pathname
+      .split('/')
+      .filter(Boolean)
+      .some((segment) => segment.startsWith('.') && !SAFE_DOT_SEGMENTS.has(segment));
+  } catch {
+    return false;
+  }
+}
+
+function sensitiveRequestGuard() {
+  const handleRequest = (req: { url?: string }, res: { statusCode: number; setHeader(name: string, value: string): void; end(body: string): void }, next: () => void) => {
+    if (!req.url || !isSensitiveRequest(req.url)) {
+      next();
+      return;
+    }
+
+    res.statusCode = 404;
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.end('Not Found');
+  };
+
+  return {
+    name: 'sensitive-request-guard',
+    configureServer(server: { middlewares: { use(handler: typeof handleRequest): void } }) {
+      server.middlewares.use(handleRequest);
+    },
+    configurePreviewServer(server: { middlewares: { use(handler: typeof handleRequest): void } }) {
+      server.middlewares.use(handleRequest);
+    },
+  };
+}
+
 export default defineConfig({
   // Absolute base so asset paths (/assets/...) resolve correctly from any
   // route depth in both Electron (valstine://app/) and the web deployment.
@@ -10,6 +50,9 @@ export default defineConfig({
   server: {
     host: "::",
     port: 8080,
+    fs: {
+      deny: VITE_FS_DENY,
+    },
     allowedHosts: [
       'valstine.com',
       'www.valstine.com',
@@ -36,7 +79,10 @@ export default defineConfig({
       },
     },
   },
-  plugins: [react()],
+  preview: {
+    host: '::',
+  },
+  plugins: [react(), sensitiveRequestGuard()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
