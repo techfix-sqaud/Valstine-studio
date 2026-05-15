@@ -30,7 +30,7 @@ function RootRedirect() {
   // Desktop: first run lands on the product hub, then Studio remains the default
   if (isElectron) {
     return isFirstTime ? (
-      <Navigate to="/welcome" replace />
+      <Navigate to="/tour" replace />
     ) : (
       <Navigate to="/studio" replace />
     );
@@ -38,7 +38,7 @@ function RootRedirect() {
 
   // Web: show landing page on first visit
   return isFirstTime ? (
-    <Navigate to="/welcome" replace />
+    <Navigate to="/tour" replace />
   ) : (
     <Navigate to="/studio" replace />
   );

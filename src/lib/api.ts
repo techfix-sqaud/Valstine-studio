@@ -14,6 +14,7 @@ function toPayload(conn: DBConnection) {
     password: conn.password ?? '',
     filename: conn.filename,
     ssl: conn.ssl ?? false,
+    sslRejectUnauthorized: conn.sslRejectUnauthorized ?? true,
   };
 }
 
@@ -75,6 +76,23 @@ async function post<T = any>(path: string, body: unknown): Promise<T> {
 
 async function get<T = any>(path: string): Promise<T> {
   return request<T>('GET', path);
+}
+
+export async function provisionDatabase(payload: {
+  type: DBType;
+  containerName?: string;
+  port?: number;
+  database: string;
+  user?: string;
+  password?: string;
+  filename?: string;
+}): Promise<{
+  ok: boolean;
+  connection?: { type: DBType; host: string; port: number; database: string; user: string; password: string; filename?: string };
+  containerId?: string;
+  error?: string;
+}> {
+  return post('/api/provision', payload);
 }
 
 export async function uploadSqliteFile(file: File): Promise<{ ok: boolean; path?: string; error?: string }> {
@@ -143,6 +161,58 @@ export async function fetchColumns(conn: DBConnection, table: string, schema?: s
 export async function fetchRowCount(conn: DBConnection, table: string, schema?: string): Promise<number> {
   const r = await post<{ count: number }>('/api/row-count', { ...toBody(conn), table, schema });
   return r.count ?? -1;
+}
+
+export interface RemoteIndexInfo {
+  name: string;
+  unique: boolean;
+  columns: string;
+}
+
+export async function fetchIndexes(conn: DBConnection, table: string, schema?: string): Promise<RemoteIndexInfo[]> {
+  const r = await post<{ indexes: RemoteIndexInfo[] }>('/api/indexes', { ...toBody(conn), table, schema });
+  return r.indexes ?? [];
+}
+
+export interface RemoteSchemaIndexInfo {
+  name: string;
+  tableName: string;
+  unique: boolean;
+  columns: string;
+}
+
+export async function fetchSchemaIndexes(conn: DBConnection, schema?: string): Promise<RemoteSchemaIndexInfo[]> {
+  const r = await post<{ indexes: RemoteSchemaIndexInfo[] }>('/api/schema-indexes', { ...toBody(conn), schema });
+  return r.indexes ?? [];
+}
+
+export interface RemoteFunctionInfo {
+  name: string;
+  kind: 'FUNCTION' | 'PROCEDURE';
+  returnType: string;
+  language: string;
+}
+
+export async function fetchFunctions(conn: DBConnection, schema?: string): Promise<RemoteFunctionInfo[]> {
+  const r = await post<{ functions: RemoteFunctionInfo[] }>('/api/functions', { ...toBody(conn), schema });
+  return r.functions ?? [];
+}
+
+export interface RemoteTriggerInfo {
+  name: string;
+  tableName: string;
+  event: string;
+  timing: string;
+}
+
+export async function fetchTriggers(conn: DBConnection, schema?: string): Promise<RemoteTriggerInfo[]> {
+  const r = await post<{ triggers: RemoteTriggerInfo[] }>('/api/triggers', { ...toBody(conn), schema });
+  return r.triggers ?? [];
+}
+
+export async function fetchSequences(conn: DBConnection, schema?: string): Promise<string[]> {
+  const r = await post<{ sequences: string[] }>('/api/sequences', { ...toBody(conn), schema });
+  return r.sequences ?? [];
 }
 
 export async function createDatabase(conn: DBConnection, name: string): Promise<{ ok: boolean; error?: string }> {

@@ -82,9 +82,12 @@ appDb.run(`CREATE TABLE IF NOT EXISTS connections (
   password TEXT,
   filename TEXT,
   ssl INTEGER DEFAULT 0,
+  ssl_reject_unauthorized INTEGER DEFAULT 1,
   status TEXT DEFAULT 'disconnected',
   created_at TEXT DEFAULT (datetime('now'))
 )`);
+// Migrate existing databases that don't have the ssl_reject_unauthorized column yet
+try { appDb.run(`ALTER TABLE connections ADD COLUMN ssl_reject_unauthorized INTEGER DEFAULT 1`); } catch { /* column already exists */ }
 
 appDb.run(`CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
@@ -175,6 +178,7 @@ interface ConnectionPayload {
   password?: string;
   filename?: string;
   ssl?: boolean;
+  sslRejectUnauthorized?: boolean;
 }
 
 function connectionKey(c: ConnectionPayload): string {
@@ -205,7 +209,7 @@ function getKnex(c: ConnectionPayload): DbLike {
           database: c.database,
           user: c.user ?? "",
           password: c.password ?? "",
-          ssl: c.ssl ? { rejectUnauthorized: true } : false,
+          ssl: c.ssl ? { rejectUnauthorized: c.sslRejectUnauthorized ?? true } : false,
         },
         pool: { min: 0, max: 5 },
       };
@@ -219,14 +223,14 @@ function getKnex(c: ConnectionPayload): DbLike {
           database: c.database,
           user: c.user ?? "",
           password: c.password ?? "",
-          ssl: c.ssl ? { rejectUnauthorized: true } : undefined,
+          ssl: c.ssl ? { rejectUnauthorized: c.sslRejectUnauthorized ?? true } : undefined,
         },
         pool: { min: 0, max: 5 },
       };
       break;
     case "mssql":
       config = {
-        client: "tedious",
+        client: "mssql",
         connection: {
           server: c.host,
           port: c.port ?? 1433,
@@ -270,6 +274,7 @@ function resolveConnection(body: { connectionId?: string; connection?: Connectio
       password: row.password ? decryptPassword(row.password) : undefined,
       filename: row.filename ?? undefined,
       ssl: row.ssl === 1,
+      sslRejectUnauthorized: row.ssl_reject_unauthorized !== 0,
     };
   }
   if (body.connection) return body.connection;
@@ -597,6 +602,206 @@ async function getRowCount(c: ConnectionPayload, tableName: string, schema?: str
   }
 }
 
+// ── Index / Function / Trigger / Sequence introspection ───────────────
+
+interface IndexInfo { name: string; unique: boolean; columns: string; }
+
+async function listIndexes(c: ConnectionPayload, tableName: string, schema?: string): Promise<IndexInfo[]> {
+  const db = getKnex(c);
+  try {
+    switch (c.type) {
+      case "pg": {
+        const s = schema || "public";
+        const r = await db.raw(
+          `SELECT i.relname AS name, ix.indisunique AS is_unique,
+            string_agg(a.attname, ', ' ORDER BY array_position(ix.indkey, a.attnum)) AS columns
+           FROM pg_index ix
+           JOIN pg_class t ON t.oid = ix.indrelid
+           JOIN pg_class i ON i.oid = ix.indexrelid
+           JOIN pg_namespace n ON n.oid = t.relnamespace
+           JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+           WHERE t.relname = ? AND n.nspname = ? AND t.relkind = 'r'
+           GROUP BY i.relname, ix.indisunique ORDER BY i.relname`,
+          [tableName, s],
+        );
+        return (r.rows ?? []).map((row: any) => ({ name: row.name, unique: row.is_unique === true, columns: row.columns ?? "" }));
+      }
+      case "mysql": {
+        const [rows] = await db.raw("SHOW INDEX FROM ??", [tableName]);
+        const byName = new Map<string, { unique: boolean; cols: string[] }>();
+        for (const row of rows as any[]) { const e = byName.get(row.Key_name) ?? { unique: row.Non_unique === 0, cols: [] }; e.cols.push(row.Column_name); byName.set(row.Key_name, e); }
+        return Array.from(byName.entries()).map(([name, e]) => ({ name, unique: e.unique, columns: e.cols.join(", ") }));
+      }
+      case "sqlite": {
+        validateIdentifier(tableName, "table name");
+        const idxList = await db.raw(`PRAGMA index_list("${tableName}")`);
+        const result: IndexInfo[] = [];
+        for (const idx of (Array.isArray(idxList) ? idxList : [])) {
+          const cols = await db.raw(`PRAGMA index_info("${idx.name}")`);
+          result.push({ name: idx.name, unique: idx.unique === 1, columns: (Array.isArray(cols) ? cols : []).map((c: any) => c.name).join(", ") });
+        }
+        return result;
+      }
+      case "mssql": {
+        const s = schema || "dbo";
+        const r = await db.raw(
+          `SELECT i.name, i.is_unique, STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns
+           FROM sys.indexes i JOIN sys.tables t ON t.object_id = i.object_id
+           JOIN sys.schemas sc ON sc.schema_id = t.schema_id
+           JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+           JOIN sys.columns c ON c.object_id = i.object_id AND c.column_id = ic.column_id
+           WHERE t.name = ? AND sc.name = ? AND i.type > 0 GROUP BY i.name, i.is_unique ORDER BY i.name`,
+          [tableName, s],
+        );
+        return (Array.isArray(r) ? r : []).map((row: any) => ({ name: row.name, unique: row.is_unique === 1, columns: row.columns ?? "" }));
+      }
+      default: return [];
+    }
+  } catch { return []; }
+}
+
+interface FunctionInfo { name: string; kind: "FUNCTION" | "PROCEDURE"; returnType: string; language: string; }
+
+async function listFunctions(c: ConnectionPayload, schema?: string): Promise<FunctionInfo[]> {
+  const db = getKnex(c);
+  try {
+    switch (c.type) {
+      case "pg": {
+        const s = schema || "public";
+        const r = await db.raw(
+          `SELECT p.proname AS name,
+            CASE WHEN p.prokind = 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END AS kind,
+            COALESCE(pg_catalog.pg_get_function_result(p.oid), 'void') AS return_type,
+            l.lanname AS language
+           FROM pg_catalog.pg_proc p
+           JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+           JOIN pg_catalog.pg_language l ON l.oid = p.prolang
+           WHERE n.nspname = ? AND p.prokind NOT IN ('a', 'w')
+           ORDER BY p.prokind, p.proname`, [s],
+        );
+        return (r.rows ?? []).map((row: any) => ({ name: row.name, kind: row.kind as 'FUNCTION' | 'PROCEDURE', returnType: row.return_type, language: row.language }));
+      }
+      case "mysql": {
+        const [rows] = await db.raw(`SELECT ROUTINE_NAME AS name, ROUTINE_TYPE AS kind, COALESCE(DTD_IDENTIFIER,'void') AS return_type, 'sql' AS language FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() ORDER BY ROUTINE_TYPE, ROUTINE_NAME`);
+        return (rows as any[]).map((row) => ({ name: row.name, kind: row.kind, returnType: row.return_type, language: "sql" }));
+      }
+      case "mssql": {
+        const s = schema || "dbo";
+        const r = await db.raw(`SELECT ROUTINE_NAME AS name, ROUTINE_TYPE AS kind, COALESCE(DATA_TYPE,'void') AS return_type, 'T-SQL' AS language FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE IN ('FUNCTION','PROCEDURE') ORDER BY ROUTINE_TYPE, ROUTINE_NAME`, [s]);
+        return (Array.isArray(r) ? r : []).map((row: any) => ({ name: row.name, kind: row.kind, returnType: row.return_type, language: "T-SQL" }));
+      }
+      default: return [];
+    }
+  } catch { return []; }
+}
+
+interface TriggerInfo { name: string; tableName: string; event: string; timing: string; }
+
+async function listTriggers(c: ConnectionPayload, schema?: string): Promise<TriggerInfo[]> {
+  const db = getKnex(c);
+  try {
+    switch (c.type) {
+      case "pg": {
+        const s = schema || "public";
+        const r = await db.raw(
+          `SELECT trigger_name AS name, event_object_table AS table_name,
+            string_agg(event_manipulation,'/' ORDER BY event_manipulation) AS event, action_timing AS timing
+           FROM information_schema.triggers WHERE trigger_schema = ?
+           GROUP BY trigger_name, event_object_table, action_timing ORDER BY event_object_table, trigger_name`, [s],
+        );
+        return (r.rows ?? []).map((row: any) => ({ name: row.name, tableName: row.table_name, event: row.event ?? "", timing: row.timing ?? "" }));
+      }
+      case "mysql": {
+        const [rows] = await db.raw(`SELECT TRIGGER_NAME AS name, EVENT_OBJECT_TABLE AS table_name, EVENT_MANIPULATION AS event, ACTION_TIMING AS timing FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() ORDER BY EVENT_OBJECT_TABLE, TRIGGER_NAME`);
+        return (rows as any[]).map((row) => ({ name: row.name, tableName: row.table_name, event: row.event, timing: row.timing }));
+      }
+      case "sqlite": {
+        const rows = await db.raw(`SELECT name, tbl_name AS table_name FROM sqlite_master WHERE type='trigger' ORDER BY tbl_name, name`);
+        return (Array.isArray(rows) ? rows : []).map((row: any) => ({ name: row.name, tableName: row.table_name, event: "", timing: "" }));
+      }
+      case "mssql": {
+        const s = schema || "dbo";
+        const r = await db.raw(`SELECT t.name, OBJECT_NAME(t.parent_id) AS table_name, '' AS event, '' AS timing FROM sys.triggers t JOIN sys.tables tab ON tab.object_id = t.parent_id JOIN sys.schemas sc ON sc.schema_id = tab.schema_id WHERE sc.name = ? AND t.is_disabled = 0 ORDER BY table_name, t.name`, [s]);
+        return (Array.isArray(r) ? r : []).map((row: any) => ({ name: row.name, tableName: row.table_name, event: "", timing: "" }));
+      }
+      default: return [];
+    }
+  } catch { return []; }
+}
+
+interface SchemaIndexInfo { name: string; tableName: string; unique: boolean; columns: string; }
+
+async function listSchemaIndexes(c: ConnectionPayload, schema?: string): Promise<SchemaIndexInfo[]> {
+  const db = getKnex(c);
+  try {
+    switch (c.type) {
+      case "pg": {
+        const s = schema || "public";
+        const r = await db.raw(
+          `SELECT i.relname AS name, ix.indisunique AS is_unique, t.relname AS table_name,
+            string_agg(a.attname, ', ' ORDER BY array_position(ix.indkey, a.attnum)) AS columns
+           FROM pg_index ix
+           JOIN pg_class t ON t.oid = ix.indrelid
+           JOIN pg_class i ON i.oid = ix.indexrelid
+           JOIN pg_namespace n ON n.oid = t.relnamespace
+           JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+           WHERE n.nspname = ? AND t.relkind = 'r'
+           GROUP BY i.relname, ix.indisunique, t.relname
+           ORDER BY t.relname, i.relname`, [s],
+        );
+        return (r.rows ?? []).map((row: any) => ({ name: row.name, tableName: row.table_name, unique: row.is_unique === true, columns: row.columns ?? "" }));
+      }
+      case "mysql": {
+        const [rows] = await db.raw(
+          `SELECT TABLE_NAME AS table_name, INDEX_NAME AS name,
+            IF(NON_UNIQUE=0,1,0) AS is_unique,
+            GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX SEPARATOR ', ') AS columns
+           FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE()
+           GROUP BY TABLE_NAME, INDEX_NAME, NON_UNIQUE ORDER BY TABLE_NAME, INDEX_NAME`,
+        );
+        return (rows as any[]).map((row) => ({ name: row.name, tableName: row.table_name, unique: row.is_unique === 1, columns: row.columns ?? "" }));
+      }
+      case "sqlite": {
+        const tables = await db.raw(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`);
+        const result: SchemaIndexInfo[] = [];
+        for (const t of (Array.isArray(tables) ? tables : [])) {
+          validateIdentifier(t.name, "table name");
+          const idxList = await db.raw(`PRAGMA index_list("${t.name}")`);
+          for (const idx of (Array.isArray(idxList) ? idxList : [])) {
+            const cols = await db.raw(`PRAGMA index_info("${idx.name}")`);
+            result.push({ name: idx.name, tableName: t.name, unique: idx.unique === 1, columns: (Array.isArray(cols) ? cols : []).map((c: any) => c.name).join(", ") });
+          }
+        }
+        return result;
+      }
+      case "mssql": {
+        const s = schema || "dbo";
+        const r = await db.raw(
+          `SELECT t.name AS table_name, i.name, i.is_unique,
+            STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns
+           FROM sys.indexes i
+           JOIN sys.tables t ON t.object_id = i.object_id
+           JOIN sys.schemas sc ON sc.schema_id = t.schema_id
+           JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+           JOIN sys.columns c ON c.object_id = i.object_id AND c.column_id = ic.column_id
+           WHERE sc.name = ? AND i.type > 0
+           GROUP BY t.name, i.name, i.is_unique ORDER BY t.name, i.name`, [s],
+        );
+        return (Array.isArray(r) ? r : []).map((row: any) => ({ name: row.name, tableName: row.table_name, unique: row.is_unique === 1, columns: row.columns ?? "" }));
+      }
+      default: return [];
+    }
+  } catch { return []; }
+}
+
+async function listSequences(c: ConnectionPayload, schema?: string): Promise<string[]> {
+  if (c.type !== "pg") return [];
+  try {
+    const r = await getKnex(c).raw(`SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = ? ORDER BY sequence_name`, [schema || "public"]);
+    return (r.rows ?? []).map((row: any) => row.sequence_name as string);
+  } catch { return []; }
+}
+
 // ───── Schema snapshot (for comparison) ─────
 interface SchemaSnapshot {
   database: string;
@@ -750,6 +955,42 @@ function isGitRepo(cwd?: string): boolean {
   }
 }
 
+// ───── GitHub release cache (powers /download/* and /api/latest-release) ─────
+const GITHUB_REPO = "techfix-sqaud/Valstine-studio";
+let _releaseCache: { data: any; ts: number } | null = null;
+const RELEASE_CACHE_TTL = 5 * 60 * 1000;
+
+async function fetchLatestRelease(): Promise<any> {
+  if (_releaseCache && Date.now() - _releaseCache.ts < RELEASE_CACHE_TTL) {
+    return _releaseCache.data;
+  }
+  // /releases/latest excludes pre-releases. Use the list endpoint so pre-release
+  // builds (e.g. v1.0.0-dev.12) are included; take the first result (most recent).
+  const headers: Record<string, string> = {
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  // Set GITHUB_TOKEN in env to raise the rate limit from 60 to 5,000 req/hour.
+  if (process.env.GITHUB_TOKEN) {
+    headers["Authorization"] = `Bearer ${process.env.GITHUB_TOKEN}`;
+  }
+  const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=1`, { headers });
+  if (!res.ok) {
+    const body = await res.text();
+    console.error(`[download] GitHub API ${res.status}:`, body.slice(0, 300));
+    throw new Error(`GitHub API ${res.status}`);
+  }
+  const list = await res.json();
+  if (!Array.isArray(list) || list.length === 0) {
+    console.error("[download] GitHub returned empty releases list");
+    throw new Error("No releases found");
+  }
+  const data = list[0];
+  console.log(`[download] Resolved release: ${data.tag_name} (${(data.assets ?? []).length} assets)`);
+  _releaseCache = { data, ts: Date.now() };
+  return data;
+}
+
 // ───── Server ─────
 
 Bun.serve({
@@ -869,6 +1110,46 @@ Bun.serve({
         const connection = resolveConnection(body);
         const count = await getRowCount(connection, body.table, body.schema);
         return respond({ count });
+      }
+
+      // POST /api/indexes
+      if (req.method === "POST" && url.pathname === "/api/indexes") {
+        const body = (await req.json()) as { connectionId?: string; connection?: ConnectionPayload; table: string; schema?: string };
+        const connection = resolveConnection(body);
+        const indexes = await listIndexes(connection, body.table, body.schema);
+        return respond({ indexes });
+      }
+
+      // POST /api/schema-indexes
+      if (req.method === "POST" && url.pathname === "/api/schema-indexes") {
+        const body = (await req.json()) as { connectionId?: string; connection?: ConnectionPayload; schema?: string };
+        const connection = resolveConnection(body);
+        const indexes = await listSchemaIndexes(connection, body.schema);
+        return respond({ indexes });
+      }
+
+      // POST /api/functions
+      if (req.method === "POST" && url.pathname === "/api/functions") {
+        const body = (await req.json()) as { connectionId?: string; connection?: ConnectionPayload; schema?: string };
+        const connection = resolveConnection(body);
+        const functions = await listFunctions(connection, body.schema);
+        return respond({ functions });
+      }
+
+      // POST /api/triggers
+      if (req.method === "POST" && url.pathname === "/api/triggers") {
+        const body = (await req.json()) as { connectionId?: string; connection?: ConnectionPayload; schema?: string };
+        const connection = resolveConnection(body);
+        const triggers = await listTriggers(connection, body.schema);
+        return respond({ triggers });
+      }
+
+      // POST /api/sequences
+      if (req.method === "POST" && url.pathname === "/api/sequences") {
+        const body = (await req.json()) as { connectionId?: string; connection?: ConnectionPayload; schema?: string };
+        const connection = resolveConnection(body);
+        const sequences = await listSequences(connection, body.schema);
+        return respond({ sequences });
       }
 
       // POST /api/create-database
@@ -1224,6 +1505,7 @@ Bun.serve({
           password: "",  // never return password to browser — resolved server-side via connectionId
           filename: r.filename ?? undefined,
           ssl: r.ssl === 1,
+          sslRejectUnauthorized: r.ssl_reject_unauthorized !== 0,
           status: (r.status ?? "disconnected") as "connected" | "disconnected",
         }));
         return respond({ ok: true, connections });
@@ -1235,10 +1517,10 @@ Bun.serve({
         if (!conn.id) conn.id = `conn-${Date.now()}`;
         const encPw = conn.password ? encryptPassword(conn.password) : null;
         appDb.run(
-          `INSERT OR REPLACE INTO connections (id, name, type, host, port, database_name, username, password, filename, ssl, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT OR REPLACE INTO connections (id, name, type, host, port, database_name, username, password, filename, ssl, ssl_reject_unauthorized, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [conn.id, conn.name, conn.type, conn.host ?? null, conn.port ?? null, conn.database,
-           conn.user ?? null, encPw, conn.filename ?? null, conn.ssl ? 1 : 0, "disconnected"],
+           conn.user ?? null, encPw, conn.filename ?? null, conn.ssl ? 1 : 0, conn.sslRejectUnauthorized !== false ? 1 : 0, "disconnected"],
         );
         return respond({ ok: true, id: conn.id });
       }
@@ -1254,10 +1536,10 @@ Bun.serve({
           ? encryptPassword(conn.password)
           : (existing?.password ?? null);
         appDb.run(
-          `UPDATE connections SET name=?, type=?, host=?, port=?, database_name=?, username=?, password=?, filename=?, ssl=?
+          `UPDATE connections SET name=?, type=?, host=?, port=?, database_name=?, username=?, password=?, filename=?, ssl=?, ssl_reject_unauthorized=?
            WHERE id=?`,
           [conn.name, conn.type, conn.host ?? null, conn.port ?? null, conn.database,
-           conn.user ?? null, encPw, conn.filename ?? null, conn.ssl ? 1 : 0, id],
+           conn.user ?? null, encPw, conn.filename ?? null, conn.ssl ? 1 : 0, conn.sslRejectUnauthorized !== false ? 1 : 0, id],
         );
         return respond({ ok: true });
       }
@@ -1551,6 +1833,50 @@ Bun.serve({
         } catch (err: any) {
           if (timer) clearTimeout(timer);
           return respond({ ok: false, error: err.message ?? String(err) });
+        }
+      }
+
+      // ── Download redirect routes ──
+      // GET /api/latest-release — returns the actual GitHub asset download URLs.
+      // Assets are the real browser_download_url values so the browser can open them
+      // directly without going through a server-side redirect chain.
+      if (req.method === "GET" && url.pathname === "/api/latest-release") {
+        try {
+          const release = await fetchLatestRelease();
+          const assets: Record<string, string> = {};
+          for (const asset of release.assets ?? []) {
+            const name: string = asset.name;
+            const dl: string = asset.browser_download_url;
+            if (name.endsWith(".dmg")) assets.mac = dl;
+            if (name.endsWith(".exe")) assets.windows = dl;
+            if (name.endsWith(".AppImage")) assets.linux = dl;
+          }
+          return respond({ tag: release.tag_name ?? null, publishedAt: release.published_at ?? null, assets });
+        } catch (err: any) {
+          console.error("[download] /api/latest-release failed:", err.message);
+          return respond({ tag: null, publishedAt: null, assets: {} });
+        }
+      }
+
+      // GET /download/:platform — canonical short URL that 302-redirects to the
+      // real asset. Only redirects when an asset actually exists; returns 404 JSON
+      // otherwise so the browser never ends up on a GitHub error page.
+      const dlMatch = url.pathname.match(/^\/download\/(mac|windows|linux)$/);
+      if (req.method === "GET" && dlMatch) {
+        const platform = dlMatch[1] as "mac" | "windows" | "linux";
+        const ext = { mac: ".dmg", windows: ".exe", linux: ".AppImage" }[platform];
+        try {
+          const release = await fetchLatestRelease();
+          const asset = (release.assets ?? []).find((a: any) => (a.name as string).endsWith(ext));
+          if (!asset?.browser_download_url) {
+            return respond({ ok: false, error: "No release asset found for this platform" }, 404);
+          }
+          return new Response(null, {
+            status: 302,
+            headers: { Location: asset.browser_download_url as string, "Cache-Control": "no-cache" },
+          });
+        } catch {
+          return respond({ ok: false, error: "Could not fetch release information" }, 503);
         }
       }
 

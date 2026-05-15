@@ -1,10 +1,15 @@
-import { app, BrowserWindow, shell, Menu, ipcMain, safeStorage } from 'electron';
+import { app, BrowserWindow, shell, Menu, ipcMain, safeStorage, protocol } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'node:path';
 import * as os from 'os';
 import * as pty from 'node-pty';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, promises as fsp } from 'node:fs';
 import { registerDbIPC } from './db-ipc.js';
+// Register the custom 'valstine' scheme before the app is ready so the renderer
+// treats it as a secure origin (localStorage, fetch, CSP all work as expected).
+protocol.registerSchemesAsPrivileged([
+    { scheme: 'valstine', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
+]);
 // Load .env from the project root so DO_AI_TOKEN etc. are available in process.env.
 // In dev: app.getAppPath() is the project root.
 // In prod: env vars come from the system; this is a no-op if there's no .env file.
@@ -38,6 +43,9 @@ const isDev = !app.isPackaged;
 const isMac = process.platform === 'darwin';
 let mainWindow = null;
 let ptyProcess = null;
+function getRendererEntryPath() {
+    return path.join(app.getAppPath(), 'dist', 'index.html');
+}
 // ── Terminal Shell Integration ─────────────────────────────────────────
 function spawnPty(win) {
     if (ptyProcess) {
@@ -331,9 +339,25 @@ function registerKeychainIPC() {
 function setupAutoUpdater() {
     if (isDev)
         return;
+    // Route electron-updater logs through the main-process console so they
+    // appear in packaged-app logs (~/Library/Logs/<app>/main.log on macOS).
+    autoUpdater.logger = console;
+    autoUpdater.logger.transports = undefined; // use raw console only
+    // Never open a browser or prompt the user — download silently, then notify.
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
+    // Do NOT pick up pre-release builds for stable users.
+    autoUpdater.allowPrerelease = false;
+    autoUpdater.on('checking-for-update', () => {
+        console.log('[updater] Checking for update…');
+        mainWindow?.webContents.send('updater:checking-for-update');
+    });
+    autoUpdater.on('update-not-available', () => {
+        console.log('[updater] No update available');
+        mainWindow?.webContents.send('updater:update-not-available');
+    });
     autoUpdater.on('update-available', (info) => {
+        console.log(`[updater] Update available: ${info.version}`);
         mainWindow?.webContents.send('updater:update-available', {
             version: info.version,
             releaseNotes: info.releaseNotes,
@@ -351,15 +375,30 @@ function setupAutoUpdater() {
             version: info.version,
         });
     });
-    // Check 5 seconds after launch so the app is fully visible first
-    setTimeout(() => autoUpdater.checkForUpdates().catch(() => { }), 5000);
+    // Surface errors in the renderer so the UI can show a helpful message
+    // instead of silently failing or falling back to a browser redirect.
+    autoUpdater.on('error', (err) => {
+        console.error('[updater] Error:', err);
+        mainWindow?.webContents.send('updater:error', {
+            message: err.message ?? String(err),
+        });
+    });
+    // Check 5 seconds after launch so the app is fully visible first.
+    setTimeout(() => {
+        autoUpdater.checkForUpdates().catch((err) => {
+            console.error('[updater] checkForUpdates failed:', err);
+        });
+    }, 5000);
 }
 ipcMain.handle('updater:install', () => {
     autoUpdater.quitAndInstall();
 });
 ipcMain.handle('updater:check', () => {
-    if (!isDev)
-        autoUpdater.checkForUpdates().catch(() => { });
+    if (!isDev) {
+        autoUpdater.checkForUpdates().catch((err) => {
+            console.error('[updater] manual check failed:', err);
+        });
+    }
 });
 // ── Window Creation ──────────────────────────────────────────────────────
 function createWindow() {
@@ -435,8 +474,7 @@ function createWindow() {
         mainWindow.webContents.openDevTools({ mode: 'detach' });
     }
     else {
-        // __dirname is dist-electron/ — dist/ is a sibling, not a child
-        mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+        mainWindow.loadFile(getRendererEntryPath());
     }
     mainWindow.on('closed', () => {
         mainWindow = null;
@@ -444,8 +482,64 @@ function createWindow() {
     // Setup terminal shell integration after window is created
     setupTerminal(mainWindow);
 }
+// ── Renderer Protocol (valstine://) ──────────────────────────────────────
+// Serves packaged renderer assets from the ASAR via a privileged custom scheme.
+// Using fs.readFile (which has ASAR interception) instead of net.fetch ensures
+// files are always resolved correctly from inside the ASAR archive.
+function getMimeType(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    return {
+        '.html': 'text/html',
+        '.js': 'application/javascript',
+        '.mjs': 'application/javascript',
+        '.css': 'text/css',
+        '.json': 'application/json',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/x-icon',
+        '.woff': 'font/woff',
+        '.woff2': 'font/woff2',
+        '.ttf': 'font/ttf',
+        '.wasm': 'application/wasm',
+        '.map': 'application/json',
+    }[ext] ?? 'application/octet-stream';
+}
+function registerRendererProtocol() {
+    const distPath = path.join(app.getAppPath(), 'dist');
+    protocol.handle('valstine', async (request) => {
+        const url = new URL(request.url);
+        const rel = url.pathname === '/' ? 'index.html' : url.pathname.replace(/^\//, '');
+        const filePath = path.resolve(distPath, rel);
+        if (!filePath.startsWith(distPath)) {
+            return new Response('Forbidden', { status: 403 });
+        }
+        const corsHeaders = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers': '*',
+        };
+        try {
+            const data = await fsp.readFile(filePath);
+            return new Response(new Uint8Array(data), { headers: { 'Content-Type': getMimeType(filePath), ...corsHeaders } });
+        }
+        catch {
+            try {
+                const index = await fsp.readFile(path.join(distPath, 'index.html'));
+                return new Response(new Uint8Array(index), { headers: { 'Content-Type': 'text/html', ...corsHeaders } });
+            }
+            catch {
+                return new Response('Not Found', { status: 404 });
+            }
+        }
+    });
+}
 // ── App Lifecycle ────────────────────────────────────────────────────────
 app.whenReady().then(() => {
+    if (!isDev)
+        registerRendererProtocol();
     buildNativeMenu();
     registerKeychainIPC();
     registerDbIPC();

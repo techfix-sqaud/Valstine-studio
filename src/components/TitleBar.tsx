@@ -10,6 +10,9 @@ export function TitleBar() {
     toggleSidebar,
     openSettingsPanel,
   } = useAppStore();
+  const isMacElectron =
+    typeof window !== "undefined" &&
+    (window as any).electronAPI?.platform === "darwin";
 
   return (
     <div
@@ -24,10 +27,14 @@ export function TitleBar() {
         >
           <Menu className="w-4 h-4" />
         </button>
-        <Database className="w-4 h-4 text-primary shrink-0" />
-        <span className="text-titlebar-foreground text-xs font-medium tracking-wide shrink-0 mr-1">
-          Valstine Studio
-        </span>
+        {!isMacElectron && (
+          <>
+            <Database className="w-4 h-4 text-primary shrink-0" />
+            <span className="text-titlebar-foreground text-xs font-medium tracking-wide shrink-0 mr-1">
+              Valstine Studio
+            </span>
+          </>
+        )}
         <div style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
           <MenuBar />
         </div>

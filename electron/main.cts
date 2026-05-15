@@ -1,10 +1,19 @@
-import { app, BrowserWindow, shell, Menu, ipcMain, safeStorage } from 'electron';
+import { app, BrowserWindow, shell, Menu, ipcMain, safeStorage, protocol, globalShortcut } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'node:path';
 import * as os from 'os';
 import * as pty from 'node-pty';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, promises as fsp } from 'node:fs';
 import { registerDbIPC } from './db-ipc.cjs';
+
+// Register the custom renderer scheme before app.ready so Chromium grants it
+// full privileges (standard origin, secure context, fetch support, no CORS).
+// This lets the packaged renderer load ES modules and workers from ASAR without
+// the crossorigin/CORS issues that affect plain file:// loading.
+protocol.registerSchemesAsPrivileged([{
+  scheme: 'valstine',
+  privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
+}]);
 
 // Load .env from the project root so DO_AI_TOKEN etc. are available in process.env.
 // In dev: app.getAppPath() is the project root.
@@ -335,15 +344,96 @@ function registerKeychainIPC() {
   });
 }
 
+// ── Renderer Protocol (valstine://) ──────────────────────────────────────
+// Serves packaged renderer assets from the ASAR via a privileged custom scheme.
+// Using fs.readFile (which has ASAR interception) instead of net.fetch ensures
+// files are always resolved correctly from inside the ASAR archive.
+
+function getMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  return ({
+    '.html': 'text/html',
+    '.js':   'application/javascript',
+    '.mjs':  'application/javascript',
+    '.css':  'text/css',
+    '.json': 'application/json',
+    '.png':  'image/png',
+    '.jpg':  'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif':  'image/gif',
+    '.svg':  'image/svg+xml',
+    '.ico':  'image/x-icon',
+    '.woff': 'font/woff',
+    '.woff2':'font/woff2',
+    '.ttf':  'font/ttf',
+    '.wasm': 'application/wasm',
+    '.map':  'application/json',
+  } as Record<string, string>)[ext] ?? 'application/octet-stream';
+}
+
+function registerRendererProtocol(): void {
+  // app.getAppPath() returns the ASAR root in prod and the project root in dev.
+  const distPath = path.join(app.getAppPath(), 'dist');
+
+  protocol.handle('valstine', async (request) => {
+    const url = new URL(request.url);
+    const rel = url.pathname === '/' ? 'index.html' : url.pathname.replace(/^\//, '');
+    const filePath = path.resolve(distPath, rel);
+
+    // Prevent path traversal attacks.
+    if (!filePath.startsWith(distPath)) {
+      return new Response('Forbidden', { status: 403 });
+    }
+
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': '*',
+    };
+
+    try {
+      const data = await fsp.readFile(filePath);
+      // Buffer extends Uint8Array; cast explicitly so TypeScript's BodyInit check passes.
+      return new Response(new Uint8Array(data), { headers: { 'Content-Type': getMimeType(filePath), ...corsHeaders } });
+    } catch {
+      // SPA fallback: unknown paths return index.html so BrowserRouter handles routing.
+      try {
+        const index = await fsp.readFile(path.join(distPath, 'index.html'));
+        return new Response(new Uint8Array(index), { headers: { 'Content-Type': 'text/html', ...corsHeaders } });
+      } catch {
+        return new Response('Not Found', { status: 404 });
+      }
+    }
+  });
+}
+
 // ── Auto-Updater ─────────────────────────────────────────────────────────
 
 function setupAutoUpdater() {
   if (isDev) return;
 
+  // Route electron-updater logs through the main-process console so they
+  // appear in the packaged-app log file (~/Library/Logs/<app>/main.log on macOS).
+  autoUpdater.logger = console;
+
+  // Never open a browser or prompt the user — download silently, then notify.
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  // Do NOT pick up pre-release builds for stable users.
+  autoUpdater.allowPrerelease = false;
+
+  autoUpdater.on('checking-for-update', () => {
+    console.log('[updater] Checking for update…');
+    mainWindow?.webContents.send('updater:checking-for-update');
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    console.log('[updater] No update available');
+    mainWindow?.webContents.send('updater:update-not-available');
+  });
 
   autoUpdater.on('update-available', (info) => {
+    console.log(`[updater] Update available: ${info.version}`);
     mainWindow?.webContents.send('updater:update-available', {
       version: info.version,
       releaseNotes: info.releaseNotes,
@@ -359,13 +449,27 @@ function setupAutoUpdater() {
   });
 
   autoUpdater.on('update-downloaded', (info) => {
+    console.log(`[updater] Update downloaded: ${info.version}`);
     mainWindow?.webContents.send('updater:update-downloaded', {
       version: info.version,
     });
   });
 
-  // Check 5 seconds after launch so the app is fully visible first
-  setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 5000);
+  // Surface errors in the renderer so the UI can show a helpful message
+  // instead of silently failing or falling back to a browser redirect.
+  autoUpdater.on('error', (err) => {
+    console.error('[updater] Error:', err);
+    mainWindow?.webContents.send('updater:error', {
+      message: err.message ?? String(err),
+    });
+  });
+
+  // Check 5 seconds after launch so the app is fully visible first.
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.error('[updater] checkForUpdates failed:', err);
+    });
+  }, 5000);
 }
 
 ipcMain.handle('updater:install', () => {
@@ -373,7 +477,11 @@ ipcMain.handle('updater:install', () => {
 });
 
 ipcMain.handle('updater:check', () => {
-  if (!isDev) autoUpdater.checkForUpdates().catch(() => {});
+  if (!isDev) {
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.error('[updater] manual check failed:', err);
+    });
+  }
 });
 
 // ── Window Creation ──────────────────────────────────────────────────────
@@ -384,14 +492,17 @@ function createWindow() {
     height: 800,
     minWidth: 680,
     minHeight: 500,
-    // macOS: hidden title bar with inset traffic lights (app draws its own bar)
+    // macOS: use 'hidden' with trafficLightPosition instead of 'hiddenInset' to avoid macOS UI render bugs
     // Windows/Linux: frameless so the app renders a VS Code-style title bar
-    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    titleBarStyle: 'hidden',
     titleBarOverlay: !isMac
       ? { color: '#1e2228', symbolColor: '#cccccc', height: 36 }
       : undefined,
     trafficLightPosition: isMac ? { x: 12, y: 10 } : undefined,
     backgroundColor: '#1e2228',
+    // Force transparency off on macOS to fix blurred/blank window render bug
+    transparent: false,
+    vibrancy: undefined,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -423,7 +534,11 @@ function createWindow() {
     console.error(`[renderer] Process gone: ${details.reason} (exitCode ${details.exitCode})`);
   });
 
-  // Content-Security-Policy (prod only — dev needs looser rules for HMR)
+  // Content-Security-Policy (prod only — dev needs looser rules for HMR).
+  // 'self' = valstine://app origin (all renderer assets are served from there).
+  // 'wasm-unsafe-eval' is required for Monaco Editor's WASM-based features.
+  // connect-src https: allows the Landing page GitHub API fetch and any HTTPS
+  // calls the renderer makes; all sensitive data goes through IPC, not fetch.
   if (!isDev) {
     mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
       callback({
@@ -431,21 +546,29 @@ function createWindow() {
           ...details.responseHeaders,
           'Content-Security-Policy': [
             "default-src 'self'; " +
-            "script-src 'self' 'unsafe-eval' blob:; " +
-            "style-src 'self' 'unsafe-inline'; " +
+            "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:; " +
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
             "img-src 'self' data: blob: https:; " +
-            "font-src 'self' data:; " +
+            "font-src 'self' data: https://fonts.gstatic.com; " +
             "worker-src 'self' blob:; " +
-            "connect-src 'self' ws://localhost:* wss://localhost:*",
+            "connect-src 'self' https: wss: ws:",
           ],
         },
       });
     });
+
+    // Forward renderer console errors to the main-process log file so they are
+    // visible even when DevTools are closed (level 2 = warning, 3 = error).
+    mainWindow.webContents.on('console-message', (_ev, level, message, line, sourceId) => {
+      if (level >= 2) {
+        console.error(`[renderer:${level === 3 ? 'error' : 'warn'}] ${message} (${sourceId}:${line})`);
+      }
+    });
   }
 
-  // Open external links in default browser
+  // Open external links in the system browser; block in-app navigation to external URLs.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http')) {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
       shell.openExternal(url);
     }
     return { action: 'deny' };
@@ -455,8 +578,11 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:8080');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
-    // __dirname is dist-electron/ — dist/ is a sibling, not a child
-    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+    // Load the renderer via the registered valstine:// protocol.
+    // This gives the page a real secure origin so ES modules, workers, and CSP
+    // all work correctly from the packaged ASAR — avoids the crossorigin/file://
+    // ambiguity that causes blank windows in packaged macOS builds.
+    mainWindow.loadURL('valstine://app/');
   }
 
   mainWindow.on('closed', () => {
@@ -469,12 +595,29 @@ function createWindow() {
 
 // ── App Lifecycle ────────────────────────────────────────────────────────
 
+// Disable hardware acceleration on Linux (avoids blank screens) or if disabled by a flag
+if (process.platform === 'linux' || process.env.DISABLE_GPU) {
+  app.disableHardwareAcceleration();
+}
+
 app.whenReady().then(() => {
+  // Must be called after app.ready but before createWindow.
+  registerRendererProtocol();
+
   buildNativeMenu();
   registerKeychainIPC();
   registerDbIPC();
   createWindow();
   setupAutoUpdater();
+
+  // F12 toggles DevTools in production builds — essential for diagnosing
+  // packaged-build rendering issues without rebuilding with isDev=true.
+  globalShortcut.register('F12', () => {
+    if (!mainWindow) return;
+    mainWindow.webContents.isDevToolsOpened()
+      ? mainWindow.webContents.closeDevTools()
+      : mainWindow.webContents.openDevTools({ mode: 'detach' });
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -490,6 +633,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
   if (ptyProcess) {
     ptyProcess.kill();
     ptyProcess = null;

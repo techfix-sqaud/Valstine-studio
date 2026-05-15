@@ -72,10 +72,16 @@ const sidebarTitles: Record<
       "Generate SQL, explain plans, fix errors, and suggest schema improvements in context.",
   },
   viz: {
-    eyebrow: "Insight layer",
-    heading: "Visualization builder",
+    eyebrow: "BI studio",
+    heading: "Dashboard and story builder",
     summary:
-      "Turn results into charts, dashboards, and guided insights from the same result set.",
+      "Turn results into Tableau-style boards, dashboards, and guided insights from the same result set.",
+  },
+  templates: {
+    eyebrow: "Excel templates",
+    heading: "Workbook packs and exports",
+    summary:
+      "Use governed Excel-style templates for finance, ops, and executive handoff from the same workspace.",
   },
   migrations: {
     eyebrow: "Import pipeline",

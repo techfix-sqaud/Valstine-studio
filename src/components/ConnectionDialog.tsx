@@ -26,6 +26,7 @@ function emptyConn(type: DBType = "pg"): Omit<DBConnection, "id"> {
     password: "",
     filename: "",
     ssl: false,
+    sslRejectUnauthorized: true,
     status: "disconnected" as const,
   };
 }
@@ -326,12 +327,27 @@ export function ConnectionDialog() {
                   type="checkbox"
                   checked={form.ssl ?? false}
                   onChange={(e) =>
-                    setForm((f) => ({ ...f, ssl: e.target.checked }))
+                    setForm((f) => ({ ...f, ssl: e.target.checked, sslRejectUnauthorized: e.target.checked ? (f.sslRejectUnauthorized ?? true) : true }))
                   }
                   className="rounded"
                 />
                 Use SSL / TLS
               </label>
+
+              {form.ssl && (
+                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer pl-1">
+                  <input
+                    type="checkbox"
+                    checked={form.sslRejectUnauthorized ?? true}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, sslRejectUnauthorized: e.target.checked }))
+                    }
+                    className="rounded"
+                  />
+                  Verify server certificate
+                  <span className="text-muted-foreground/60">(uncheck for self-signed certs)</span>
+                </label>
+              )}
             </>
           )}
 

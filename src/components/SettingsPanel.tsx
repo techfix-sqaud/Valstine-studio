@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   X,
   Monitor,
@@ -16,6 +16,9 @@ import {
   User,
   GitBranch,
   ExternalLink,
+  CheckCircle2,
+  LoaderCircle,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppStore, type AccountAuthProvider } from "@/store/app-store";
@@ -178,6 +181,81 @@ function TerminalPreview({
 // ── Sections ───────────────────────────────────────────────────
 function GeneralSection() {
   const { theme, toggleTheme } = useAppStore();
+  const [updateStatus, setUpdateStatus] = useState<{
+    tone: "idle" | "checking" | "success" | "error";
+    message: string;
+  }>({
+    tone: "idle",
+    message: "",
+  });
+
+  useEffect(() => {
+    const api = window.updaterAPI;
+    if (!api) return;
+
+    const offChecking = api.onCheckingForUpdate(() => {
+      setUpdateStatus({
+        tone: "checking",
+        message: "Checking for updates…",
+      });
+    });
+
+    const offNotAvailable = api.onUpdateNotAvailable(() => {
+      setUpdateStatus({
+        tone: "success",
+        message: "You already have the latest version.",
+      });
+    });
+
+    const offAvailable = api.onUpdateAvailable(({ version }) => {
+      setUpdateStatus({
+        tone: "success",
+        message: `Version ${version} is available and downloading now.`,
+      });
+    });
+
+    const offDownloaded = api.onUpdateDownloaded(({ version }) => {
+      setUpdateStatus({
+        tone: "success",
+        message: version
+          ? `Version ${version} is ready to install. Restart from the update banner.`
+          : "Update downloaded. Restart from the update banner to install it.",
+      });
+    });
+
+    const offError = api.onUpdateError(({ message }) => {
+      setUpdateStatus({
+        tone: "error",
+        message: message || "Unable to check for updates right now.",
+      });
+    });
+
+    return () => {
+      offChecking();
+      offNotAvailable();
+      offAvailable();
+      offDownloaded();
+      offError();
+    };
+  }, []);
+
+  const handleManualUpdateCheck = () => {
+    if (!window.updaterAPI) {
+      setUpdateStatus({
+        tone: "error",
+        message:
+          "Update checks are only available in the packaged desktop app.",
+      });
+      return;
+    }
+
+    setUpdateStatus({
+      tone: "checking",
+      message: "Checking for updates…",
+    });
+    window.updaterAPI.checkForUpdates();
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -203,6 +281,52 @@ function GeneralSection() {
             {theme === "dark" ? "Dark" : "Light"}
           </button>
         </div>
+      </div>
+
+      <div>
+        <h3 className="text-xs font-semibold text-foreground mb-3">Updates</h3>
+        <div className="flex items-start justify-between gap-4 py-2 border-b border-panel-border/50">
+          <div className="min-w-0">
+            <div className="text-xs text-foreground">Check for updates</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">
+              Manually check for the latest Valstine Studio release.
+            </div>
+          </div>
+          <button
+            onClick={handleManualUpdateCheck}
+            disabled={updateStatus.tone === "checking"}
+            className="inline-flex shrink-0 items-center gap-2 rounded border border-panel-border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {updateStatus.tone === "checking" ? (
+              <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            {updateStatus.tone === "checking" ? "Checking..." : "Check now"}
+          </button>
+        </div>
+
+        {updateStatus.message && (
+          <div
+            className={cn(
+              "mt-3 flex items-start gap-2 rounded border px-3 py-2 text-[11px]",
+              updateStatus.tone === "error"
+                ? "border-red-500/20 bg-red-500/10 text-red-400"
+                : updateStatus.tone === "success"
+                  ? "border-green-500/20 bg-green-500/10 text-green-400"
+                  : "border-panel-border bg-secondary/30 text-muted-foreground",
+            )}
+          >
+            {updateStatus.tone === "checking" ? (
+              <LoaderCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" />
+            ) : updateStatus.tone === "success" ? (
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            ) : updateStatus.tone === "error" ? (
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            ) : null}
+            <span>{updateStatus.message}</span>
+          </div>
+        )}
       </div>
     </div>
   );
