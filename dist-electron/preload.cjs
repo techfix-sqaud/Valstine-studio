@@ -47,6 +47,17 @@ const DB_ACTION_MAP = {
     'git/checkout': 'git:checkout',
     'git/log': 'git:log',
     'git/create-pr': 'git:create-pr',
+    'git/pull': 'git:pull',
+    'git/add-remote': 'git:add-remote',
+    'git/init': 'git:init',
+    'github/clone': 'github:clone',
+    'github/schema-sql': 'github:schema-sql',
+    'schema-indexes': 'db:schema-indexes',
+    indexes: 'db:indexes',
+    functions: 'db:functions',
+    triggers: 'db:triggers',
+    sequences: 'db:sequences',
+    provision: 'db:provision',
 };
 electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     platform: process.platform,
@@ -97,6 +108,14 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
 });
 // ── Auto-Updater API ───────────────────────────────────────────────────────
 electron_1.contextBridge.exposeInMainWorld('updaterAPI', {
+    onCheckingForUpdate: (callback) => {
+        electron_1.ipcRenderer.on('updater:checking-for-update', callback);
+        return () => electron_1.ipcRenderer.removeListener('updater:checking-for-update', callback);
+    },
+    onUpdateNotAvailable: (callback) => {
+        electron_1.ipcRenderer.on('updater:update-not-available', callback);
+        return () => electron_1.ipcRenderer.removeListener('updater:update-not-available', callback);
+    },
     onUpdateAvailable: (callback) => {
         const listener = (_e, info) => callback(info);
         electron_1.ipcRenderer.on('updater:update-available', listener);
@@ -111,6 +130,13 @@ electron_1.contextBridge.exposeInMainWorld('updaterAPI', {
         const listener = (_e, info) => callback(info);
         electron_1.ipcRenderer.on('updater:update-downloaded', listener);
         return () => electron_1.ipcRenderer.removeListener('updater:update-downloaded', listener);
+    },
+    // Surfaces download/check errors so the renderer can show an in-app message
+    // instead of silently failing or falling back to a browser URL.
+    onUpdateError: (callback) => {
+        const listener = (_e, info) => callback(info);
+        electron_1.ipcRenderer.on('updater:error', listener);
+        return () => electron_1.ipcRenderer.removeListener('updater:error', listener);
     },
     installUpdate: () => electron_1.ipcRenderer.invoke('updater:install'),
     checkForUpdates: () => electron_1.ipcRenderer.invoke('updater:check'),

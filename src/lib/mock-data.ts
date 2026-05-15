@@ -11,6 +11,7 @@ export interface DBConnection {
   password?: string;
   filename?: string; // for SQLite
   ssl?: boolean;
+  sslRejectUnauthorized?: boolean;
   status: 'connected' | 'disconnected';
 }
 

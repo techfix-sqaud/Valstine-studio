@@ -106,6 +106,63 @@ const platformCards = [
   },
 ] as const;
 
+const pricingPlans = [
+  {
+    name: "Individuals / Students",
+    price: "Free",
+    cadence: "No credit card",
+    badge: "Entry tier",
+    summary:
+      "For learning, solo experimentation, and light daily database work.",
+    cta: "Start Free",
+    action: "launch",
+    highlight: false,
+    features: [
+      "Up to 3 database connections at a time",
+      "3 AI questions per day",
+      "No cloud deployments",
+      "Core Studio and Analyst OS workspace features",
+      "New foundational features as the platform grows",
+    ],
+  },
+  {
+    name: "Pro",
+    price: "$8",
+    cadence: "/ month",
+    badge: "Most popular",
+    summary:
+      "For independent builders who need more AI help and more room to ship.",
+    cta: "Upgrade to Pro",
+    action: "launch",
+    highlight: true,
+    features: [
+      "10 AI questions per day",
+      "Unlimited database connections",
+      "Up to 2 cloud deployments",
+      "Priority access to new features and improvements",
+      "Includes future Pro features as they are added",
+    ],
+  },
+  {
+    name: "Teams",
+    price: "Custom",
+    cadence: "Contact sales",
+    badge: "Scale tier",
+    summary:
+      "For teams running many environments, shared workflows, and ongoing delivery.",
+    cta: "Talk to Us",
+    action: "contact",
+    highlight: false,
+    features: [
+      "30 AI questions per day",
+      "Unlimited database connections",
+      "Unlimited cloud connections",
+      "Built for multi-environment delivery and shared operations",
+      "Access to additional team features as they are introduced",
+    ],
+  },
+] as const;
+
 function StudioPreview({
   borderClass,
   isDark,
@@ -858,6 +915,10 @@ export default function Landing() {
   const { completeOnboarding, isFirstTime, theme, toggleTheme } = useAppStore();
   const platform = detectPlatform();
   const isDark = theme === "dark";
+  // When running inside the Electron shell the user already has the app installed.
+  // Download buttons must never open GitHub in the external browser.
+  const isElectron =
+    typeof window !== "undefined" && !!(window as any).electronAPI?.isElectron;
   const [releaseInfo, setReleaseInfo] = useState<{
     tag: string;
     publishedAt: string;
@@ -936,52 +997,33 @@ export default function Landing() {
   }, [isDark]);
 
   useEffect(() => {
-    fetch(
-      "https://api.github.com/repos/techfix-sqaud/Valstine-studio/releases?per_page=1",
-    )
+    // In Electron the user already has the app — download buttons are hidden and
+    // electron-updater handles version checks internally, so skip the API call.
+    if (isElectron) return;
+    fetch("/api/latest-release")
       .then((res) => res.json())
-      .then((releases) => {
-        if (!Array.isArray(releases) || releases.length === 0) {
-          throw new Error("No releases found");
-        }
-
-        const data = releases[0];
-        if (!data.tag_name || !Array.isArray(data.assets)) {
-          throw new Error("No release found");
-        }
-
-        const assets: Record<string, string> = {};
-        for (const asset of data.assets) {
-          if (asset.name.endsWith(".dmg"))
-            assets.mac = asset.browser_download_url;
-          if (asset.name.endsWith(".exe"))
-            assets.windows = asset.browser_download_url;
-          if (asset.name.endsWith(".AppImage"))
-            assets.linux = asset.browser_download_url;
-        }
-
+      .then((data) => {
+        if (!data.tag) return;
         setReleaseInfo({
-          tag: data.tag_name,
-          publishedAt: data.published_at ?? '',
-          releaseUrl: data.html_url ?? '',
-          assets,
+          tag: data.tag,
+          publishedAt: data.publishedAt ?? "",
+          releaseUrl: `https://github.com/techfix-sqaud/Valstine-studio/releases/tag/${data.tag}`,
+          assets: data.assets ?? {},
         });
       })
-      .catch(() => setReleaseInfo(null));
+      .catch(() => {
+        /* no release info available */
+      });
   }, []);
 
-  // If no release info yet, link to the releases page so users can find what's available.
-  const releasesPage = "https://github.com/techfix-sqaud/Valstine-studio/releases/latest";
-  const fallbackBase =
-    "https://github.com/techfix-sqaud/Valstine-studio/releases/latest/download";
-  const downloadLinks = {
-    mac: releaseInfo?.assets.mac || (releaseInfo ? `${fallbackBase}/Valstine-Studio.dmg` : releasesPage),
-    windows: releaseInfo?.assets.windows || (releaseInfo ? `${fallbackBase}/Valstine-Studio-Setup.exe` : releasesPage),
-    linux: releaseInfo?.assets.linux || (releaseInfo ? `${fallbackBase}/Valstine-Studio.AppImage` : releasesPage),
-  };
-
+  // Open the binary in a new tab. GitHub serves it with Content-Disposition: attachment
+  // so the tab triggers a download immediately and closes — the user stays on this page.
   const handleDownload = (target: "mac" | "windows" | "linux") => {
-    window.open(downloadLinks[target], "_blank");
+    if (isElectron) return;
+    const url = releaseInfo?.assets[target];
+    if (url) {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
   };
 
   const handleEnterStudio = () => {
@@ -999,6 +1041,16 @@ export default function Landing() {
     }
 
     navigate("/analyst-os");
+  };
+
+  const handlePricingAction = (action: "launch" | "contact") => {
+    if (action === "contact") {
+      window.location.href =
+        "mailto:support@valstine.com?subject=Valstine%20Teams%20Plan";
+      return;
+    }
+
+    handleEnterAnalyst();
   };
 
   return (
@@ -1097,7 +1149,7 @@ export default function Landing() {
                   Enter Analyst OS
                   <ArrowRight className="h-4 w-4" />
                 </button>
-                {platform !== "unknown" ? (
+                {!isElectron && platform !== "unknown" ? (
                   <button
                     onClick={() => handleDownload(platform)}
                     className={`inline-flex items-center justify-center gap-2 rounded-2xl border ${borderClass} ${softClass} px-6 py-3 text-sm font-medium ${mutedTextClass} transition hover:border-[#315ea8]/40 hover:text-[color:var(--landing-text)] ${softHoverClass}`}
@@ -1269,6 +1321,98 @@ export default function Landing() {
           </div>
         </section>
 
+        <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div
+                className={`text-[11px] uppercase tracking-[0.24em] ${accentTextClass}`}
+              >
+                Pricing
+              </div>
+              <h2
+                className={`mt-4 text-3xl font-semibold ${textClass} sm:text-4xl`}
+              >
+                Simple plans for students, solo operators, and teams.
+              </h2>
+              <p
+                className={`mt-4 max-w-2xl text-base leading-7 ${dimTextClass}`}
+              >
+                Every plan includes both Valstine Studio and Analyst OS. As the
+                platform expands, plan-specific capabilities can grow with it.
+              </p>
+            </div>
+            <div
+              className={`rounded-2xl border ${borderClass} ${softClass} px-4 py-3 text-sm ${mutedTextClass}`}
+            >
+              AI usage and cloud deployment limits scale by plan.
+            </div>
+          </div>
+
+          <div className="mt-8 grid gap-5 lg:grid-cols-3">
+            {pricingPlans.map((plan) => (
+              <div
+                key={plan.name}
+                className={`rounded-[30px] border ${plan.highlight ? "border-[color:var(--landing-accent-strong)]/35" : borderClass} ${plan.highlight ? "bg-[linear-gradient(180deg,rgba(33,76,145,0.18),rgba(33,76,145,0.06))]" : panelClass} p-6`}
+                style={{ boxShadow: "var(--landing-card-shadow)" }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div
+                      className={`inline-flex rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.2em] ${plan.highlight ? "border-[color:var(--landing-accent-strong)]/35 bg-[var(--landing-accent-soft)] text-[color:var(--landing-accent)]" : `${borderClass} ${softClass} ${dimTextClass}`}`}
+                    >
+                      {plan.badge}
+                    </div>
+                    <div className={`mt-4 text-xl font-semibold ${textClass}`}>
+                      {plan.name}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl bg-[var(--landing-accent-soft)] p-3 text-[color:var(--landing-accent)]">
+                    {plan.highlight ? (
+                      <Sparkles className="h-5 w-5" />
+                    ) : plan.name === "Teams" ? (
+                      <Layers3 className="h-5 w-5" />
+                    ) : (
+                      <Bot className="h-5 w-5" />
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-6 flex items-end gap-2">
+                  <div className={`text-4xl font-semibold ${textClass}`}>
+                    {plan.price}
+                  </div>
+                  <div className={`pb-1 text-sm ${mutedTextClass}`}>
+                    {plan.cadence}
+                  </div>
+                </div>
+
+                <p className={`mt-4 text-sm leading-7 ${mutedTextClass}`}>
+                  {plan.summary}
+                </p>
+
+                <div className="mt-6 space-y-3">
+                  {plan.features.map((feature) => (
+                    <div key={feature} className="flex gap-3">
+                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--landing-accent)]" />
+                      <span className={`text-[13px] leading-6 ${dimTextClass}`}>
+                        {feature}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => handlePricingAction(plan.action)}
+                  className={`mt-8 inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${plan.highlight ? "bg-[var(--landing-primary-button)] text-[color:var(--landing-primary-button-text)] hover:bg-[var(--landing-primary-button-hover)]" : "border border-[color:var(--landing-accent-strong)]/20 bg-[var(--landing-accent-soft)] text-[color:var(--landing-accent-text)] hover:bg-[var(--landing-accent-soft-hover)]"}`}
+                >
+                  {plan.cta}
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+
         <section className="mx-auto max-w-7xl px-4 pb-20 pt-2 sm:px-6 lg:px-8 lg:pb-24">
           <div
             className={`rounded-[30px] border ${borderClass} ${panelClass} p-6 sm:p-8`}
@@ -1277,15 +1421,20 @@ export default function Landing() {
             {/* Header row */}
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <div className={`text-[11px] uppercase tracking-[0.24em] ${accentTextClass}`}>
+                <div
+                  className={`text-[11px] uppercase tracking-[0.24em] ${accentTextClass}`}
+                >
                   Download
                 </div>
                 <h2 className={`mt-3 text-3xl font-semibold ${textClass}`}>
                   One install. Studio and Analyst OS included.
                 </h2>
-                <p className={`mt-3 max-w-xl text-sm leading-7 ${dimTextClass}`}>
-                  A single cross-platform app ships both workspaces. Install once
-                  and switch between Studio and Analyst OS from the home screen.
+                <p
+                  className={`mt-3 max-w-xl text-sm leading-7 ${dimTextClass}`}
+                >
+                  A single cross-platform app ships both workspaces. Install
+                  once and switch between Studio and Analyst OS from the home
+                  screen.
                 </p>
               </div>
 
@@ -1294,7 +1443,9 @@ export default function Landing() {
                 <div
                   className={`inline-flex items-center gap-2 rounded-full border ${borderClass} bg-[var(--landing-accent-soft)] px-4 py-1.5`}
                 >
-                  <span className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${accentTextClass}`}>
+                  <span
+                    className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${accentTextClass}`}
+                  >
                     {releaseInfo?.tag ?? "Latest"}
                   </span>
                   <span className={`text-[10px] ${dimTextClass}`}>Stable</span>
@@ -1302,14 +1453,17 @@ export default function Landing() {
                 {releaseInfo?.publishedAt && (
                   <span className={`text-[11px] ${dimTextClass}`}>
                     Released{" "}
-                    {new Date(releaseInfo.publishedAt).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
+                    {new Date(releaseInfo.publishedAt).toLocaleDateString(
+                      "en-US",
+                      {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      },
+                    )}
                   </span>
                 )}
-                {releaseInfo?.releaseUrl && (
+                {!isElectron && releaseInfo?.releaseUrl && (
                   <a
                     href={releaseInfo.releaseUrl}
                     target="_blank"
@@ -1322,63 +1476,66 @@ export default function Landing() {
               </div>
             </div>
 
-            {/* Download buttons */}
-            <div className="mt-8 grid gap-3 sm:grid-cols-3">
-              {/* macOS */}
-              <button
-                onClick={() => handleDownload("mac")}
-                className={`group relative flex flex-col items-start gap-1 rounded-2xl border ${borderClass} ${softClass} px-5 py-4 text-left transition hover:border-[#315ea8]/40 ${softHoverClass}`}
-              >
-                <div className="flex w-full items-center justify-between">
-                  <Apple className={`h-5 w-5 ${accentTextClass}`} />
-                  {platform === "mac" && (
-                    <span className={`rounded-full border ${borderClass} bg-[var(--landing-accent-soft)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-widest ${accentTextClass}`}>
-                      Your platform
-                    </span>
-                  )}
+            {/* Download buttons — web only. Inside the Electron shell users already
+                have the app; electron-updater delivers updates natively. */}
+            {!isElectron && (
+              <>
+                <div className="mt-8 grid gap-3 sm:grid-cols-3">
+                  {(
+                    [
+                      {
+                        key: "mac" as const,
+                        label: "macOS",
+                        sub: ".dmg · Universal binary",
+                        Icon: Apple,
+                      },
+                      {
+                        key: "windows" as const,
+                        label: "Windows",
+                        sub: ".exe · NSIS installer",
+                        Icon: Laptop,
+                      },
+                      {
+                        key: "linux" as const,
+                        label: "Linux",
+                        sub: ".AppImage · No install needed",
+                        Icon: TerminalSquare,
+                      },
+                    ] as const
+                  ).map(({ key, label, sub, Icon }) => (
+                    <button
+                      key={key}
+                      onClick={() => handleDownload(key)}
+                      className={`group relative flex flex-col items-start gap-1 rounded-2xl border ${borderClass} ${softClass} px-5 py-4 text-left transition hover:border-[#315ea8]/40 ${softHoverClass}`}
+                    >
+                      <div className="flex w-full items-center justify-between">
+                        <Icon className={`h-5 w-5 ${accentTextClass}`} />
+                        {platform === key && (
+                          <span
+                            className={`rounded-full border ${borderClass} bg-[var(--landing-accent-soft)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-widest ${accentTextClass}`}
+                          >
+                            Your platform
+                          </span>
+                        )}
+                      </div>
+                      <span
+                        className={`mt-2 text-sm font-semibold ${textClass}`}
+                      >
+                        {label}
+                      </span>
+                      <span className={`text-[11px] ${dimTextClass}`}>
+                        {sub}
+                      </span>
+                    </button>
+                  ))}
                 </div>
-                <span className={`mt-2 text-sm font-semibold ${textClass}`}>macOS</span>
-                <span className={`text-[11px] ${dimTextClass}`}>.dmg · Universal binary</span>
-              </button>
 
-              {/* Windows */}
-              <button
-                onClick={() => handleDownload("windows")}
-                className={`group relative flex flex-col items-start gap-1 rounded-2xl border ${borderClass} ${softClass} px-5 py-4 text-left transition hover:border-[#315ea8]/40 ${softHoverClass}`}
-              >
-                <div className="flex w-full items-center justify-between">
-                  <Laptop className={`h-5 w-5 ${accentTextClass}`} />
-                  {platform === "windows" && (
-                    <span className={`rounded-full border ${borderClass} bg-[var(--landing-accent-soft)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-widest ${accentTextClass}`}>
-                      Your platform
-                    </span>
-                  )}
-                </div>
-                <span className={`mt-2 text-sm font-semibold ${textClass}`}>Windows</span>
-                <span className={`text-[11px] ${dimTextClass}`}>.exe · NSIS installer</span>
-              </button>
-
-              {/* Linux */}
-              <button
-                onClick={() => handleDownload("linux")}
-                className={`group relative flex flex-col items-start gap-1 rounded-2xl border ${borderClass} ${softClass} px-5 py-4 text-left transition hover:border-[#315ea8]/40 ${softHoverClass}`}
-              >
-                <div className="flex w-full items-center justify-between">
-                  <TerminalSquare className={`h-5 w-5 ${accentTextClass}`} />
-                  {platform === "linux" && (
-                    <span className={`rounded-full border ${borderClass} bg-[var(--landing-accent-soft)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-widest ${accentTextClass}`}>
-                      Your platform
-                    </span>
-                  )}
-                </div>
-                <span className={`mt-2 text-sm font-semibold ${textClass}`}>Linux</span>
-                <span className={`text-[11px] ${dimTextClass}`}>.AppImage · No install needed</span>
-              </button>
-            </div>
-
-            <p className={`mt-5 text-[11px] ${dimTextClass}`}>
-              Auto-updates are built in — the app notifies you when a new version is available.
-            </p>
+                <p className={`mt-5 text-[11px] ${dimTextClass}`}>
+                  Auto-updates are built in — the app notifies you when a new
+                  version is available.
+                </p>
+              </>
+            )}
           </div>
         </section>
       </div>

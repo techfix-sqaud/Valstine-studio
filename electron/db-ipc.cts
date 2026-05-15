@@ -110,9 +110,9 @@ function decrypt(stored: string): string {
 function migrateConnectionsToEncrypted(): void {
   const cols = appDb.prepare('PRAGMA table_info(connections)').all() as any[];
   if (!cols.some((c: any) => c.name === 'data')) {
-    appDb.exec('ALTER TABLE connections ADD COLUMN data TEXT NOT NULL DEFAULT ""');
+    appDb.exec("ALTER TABLE connections ADD COLUMN data TEXT NOT NULL DEFAULT ''");
   }
-  const rows = appDb.prepare('SELECT * FROM connections WHERE data = "" OR data IS NULL').all() as any[];
+  const rows = appDb.prepare("SELECT * FROM connections WHERE data = '' OR data IS NULL").all() as any[];
   const stmt = appDb.prepare('UPDATE connections SET data = ? WHERE id = ?');
   for (const row of rows) {
     const payload = JSON.stringify({
@@ -165,6 +165,7 @@ function handleAppRequest(method: string, reqPath: string, body: any): unknown {
         password: '',  // never return password — resolved server-side via connectionId
         filename: payload.filename || undefined,
         ssl: payload.ssl === true,
+        sslRejectUnauthorized: payload.sslRejectUnauthorized !== false,
         status: (r.status ?? 'disconnected') as 'connected' | 'disconnected',
       };
     });
@@ -183,6 +184,7 @@ function handleAppRequest(method: string, reqPath: string, body: any): unknown {
       password: conn.password ?? '',
       filename: conn.filename ?? '',
       ssl: conn.ssl === true,
+      sslRejectUnauthorized: conn.sslRejectUnauthorized !== false,
     });
     appDb.prepare(
       `INSERT OR REPLACE INTO connections (id, name, type, status, data) VALUES (?, ?, ?, 'disconnected', ?)`
@@ -208,6 +210,7 @@ function handleAppRequest(method: string, reqPath: string, body: any): unknown {
       password: conn.password || existingPassword,
       filename: conn.filename ?? '',
       ssl: conn.ssl === true,
+      sslRejectUnauthorized: conn.sslRejectUnauthorized !== false,
     });
     appDb.prepare('UPDATE connections SET name=?, type=?, data=? WHERE id=?').run(conn.name, conn.type, encrypt(payload), id);
     return { ok: true };
@@ -343,13 +346,15 @@ interface ConnectionPayload {
   password?: string;
   filename?: string;
   ssl?: boolean;
+  sslRejectUnauthorized?: boolean;
 }
 
 const pool = new Map<string, Knex>();
 
 function connectionKey(c: ConnectionPayload): string {
   if (c.type === 'sqlite') return `sqlite:${c.filename ?? c.database}`;
-  return `${c.type}://${c.user ?? ''}@${c.host}:${c.port}/${c.database}`;
+  const sslMode = c.ssl ? (c.sslRejectUnauthorized === false ? 'ssl-noverify' : 'ssl') : 'nossl';
+  return `${c.type}://${c.user ?? ''}@${c.host}:${c.port}/${c.database}?${sslMode}`;
 }
 
 function getKnex(c: ConnectionPayload): Knex {
@@ -369,7 +374,7 @@ function getKnex(c: ConnectionPayload): Knex {
           database: c.database,
           user: c.user ?? '',
           password: c.password ?? '',
-          ssl: c.ssl ? { rejectUnauthorized: true } : false,
+          ssl: c.ssl ? { rejectUnauthorized: c.sslRejectUnauthorized ?? true } : false,
         },
         pool: { min: 0, max: 5 },
       };
@@ -383,7 +388,7 @@ function getKnex(c: ConnectionPayload): Knex {
           database: c.database,
           user: c.user ?? '',
           password: c.password ?? '',
-          ssl: c.ssl ? { rejectUnauthorized: true } : undefined,
+          ssl: c.ssl ? { rejectUnauthorized: c.sslRejectUnauthorized ?? true } : undefined,
         },
         pool: { min: 0, max: 5 },
       };
@@ -397,7 +402,7 @@ function getKnex(c: ConnectionPayload): Knex {
       break;
     case 'mssql':
       config = {
-        client: 'tedious',
+        client: 'mssql',
         connection: {
           server: c.host,
           port: c.port ?? 1433,
@@ -435,6 +440,7 @@ function resolveConnection(payload: { connectionId?: string; connection?: Connec
       password: data.password || undefined,
       filename: data.filename || undefined,
       ssl: data.ssl === true,
+      sslRejectUnauthorized: data.sslRejectUnauthorized !== false,
     };
   }
   if (payload.connection) return payload.connection;
@@ -708,6 +714,259 @@ async function getRowCount(c: ConnectionPayload, tableName: string, schema?: str
   }
 }
 
+// ── Index / Function / Trigger / Sequence introspection ───────────────
+
+interface IndexInfo {
+  name: string;
+  unique: boolean;
+  columns: string;
+}
+
+async function listIndexes(c: ConnectionPayload, tableName: string, schema?: string): Promise<IndexInfo[]> {
+  const db = getKnex(c);
+  try {
+    switch (c.type) {
+      case 'pg': {
+        const s = schema || 'public';
+        const r = await db.raw(
+          `SELECT i.relname AS name, ix.indisunique AS is_unique,
+            string_agg(a.attname, ', ' ORDER BY array_position(ix.indkey, a.attnum)) AS columns
+           FROM pg_index ix
+           JOIN pg_class t ON t.oid = ix.indrelid
+           JOIN pg_class i ON i.oid = ix.indexrelid
+           JOIN pg_namespace n ON n.oid = t.relnamespace
+           JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+           WHERE t.relname = ? AND n.nspname = ? AND t.relkind = 'r'
+           GROUP BY i.relname, ix.indisunique
+           ORDER BY i.relname`,
+          [tableName, s],
+        );
+        return (r.rows ?? []).map((row: any) => ({ name: row.name, unique: row.is_unique === true, columns: row.columns ?? '' }));
+      }
+      case 'mysql': {
+        const [rows] = await db.raw('SHOW INDEX FROM ??', [tableName]);
+        const byName = new Map<string, { unique: boolean; cols: string[] }>();
+        for (const row of rows as any[]) {
+          const e = byName.get(row.Key_name) ?? { unique: row.Non_unique === 0, cols: [] };
+          e.cols.push(row.Column_name);
+          byName.set(row.Key_name, e);
+        }
+        return Array.from(byName.entries()).map(([name, e]) => ({ name, unique: e.unique, columns: e.cols.join(', ') }));
+      }
+      case 'sqlite': {
+        validateIdentifier(tableName, 'table name');
+        const idxList = await db.raw(`PRAGMA index_list("${tableName}")`);
+        const result: IndexInfo[] = [];
+        for (const idx of (Array.isArray(idxList) ? idxList : [])) {
+          const cols = await db.raw(`PRAGMA index_info("${idx.name}")`);
+          result.push({ name: idx.name, unique: idx.unique === 1, columns: (Array.isArray(cols) ? cols : []).map((c: any) => c.name).join(', ') });
+        }
+        return result;
+      }
+      case 'mssql': {
+        const s = schema || 'dbo';
+        const r = await db.raw(
+          `SELECT i.name, i.is_unique,
+            STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns
+           FROM sys.indexes i
+           JOIN sys.tables t ON t.object_id = i.object_id
+           JOIN sys.schemas sc ON sc.schema_id = t.schema_id
+           JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+           JOIN sys.columns c ON c.object_id = i.object_id AND c.column_id = ic.column_id
+           WHERE t.name = ? AND sc.name = ? AND i.type > 0
+           GROUP BY i.name, i.is_unique
+           ORDER BY i.name`,
+          [tableName, s],
+        );
+        return (Array.isArray(r) ? r : []).map((row: any) => ({ name: row.name, unique: row.is_unique === 1, columns: row.columns ?? '' }));
+      }
+      default: return [];
+    }
+  } catch { return []; }
+}
+
+interface SchemaIndexInfo { name: string; tableName: string; unique: boolean; columns: string; }
+
+async function listSchemaIndexes(c: ConnectionPayload, schema?: string): Promise<SchemaIndexInfo[]> {
+  const db = getKnex(c);
+  try {
+    switch (c.type) {
+      case 'pg': {
+        const s = schema || 'public';
+        const r = await db.raw(
+          `SELECT i.relname AS name, ix.indisunique AS is_unique, t.relname AS table_name,
+            string_agg(a.attname, ', ' ORDER BY array_position(ix.indkey, a.attnum)) AS columns
+           FROM pg_index ix
+           JOIN pg_class t ON t.oid = ix.indrelid
+           JOIN pg_class i ON i.oid = ix.indexrelid
+           JOIN pg_namespace n ON n.oid = t.relnamespace
+           JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+           WHERE n.nspname = ? AND t.relkind = 'r'
+           GROUP BY i.relname, ix.indisunique, t.relname
+           ORDER BY t.relname, i.relname`, [s],
+        );
+        return (r.rows ?? []).map((row: any) => ({ name: row.name, tableName: row.table_name, unique: row.is_unique === true, columns: row.columns ?? '' }));
+      }
+      case 'mysql': {
+        const [rows] = await db.raw(
+          `SELECT TABLE_NAME AS table_name, INDEX_NAME AS name,
+            IF(NON_UNIQUE=0,1,0) AS is_unique,
+            GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX SEPARATOR ', ') AS columns
+           FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE()
+           GROUP BY TABLE_NAME, INDEX_NAME, NON_UNIQUE ORDER BY TABLE_NAME, INDEX_NAME`,
+        );
+        return (rows as any[]).map((row) => ({ name: row.name, tableName: row.table_name, unique: row.is_unique === 1, columns: row.columns ?? '' }));
+      }
+      case 'sqlite': {
+        const tables = await db.raw(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`);
+        const result: SchemaIndexInfo[] = [];
+        for (const t of (Array.isArray(tables) ? tables : [])) {
+          validateIdentifier(t.name, 'table name');
+          const idxList = await db.raw(`PRAGMA index_list("${t.name}")`);
+          for (const idx of (Array.isArray(idxList) ? idxList : [])) {
+            const cols = await db.raw(`PRAGMA index_info("${idx.name}")`);
+            result.push({ name: idx.name, tableName: t.name, unique: idx.unique === 1, columns: (Array.isArray(cols) ? cols : []).map((c: any) => c.name).join(', ') });
+          }
+        }
+        return result;
+      }
+      case 'mssql': {
+        const s = schema || 'dbo';
+        const r = await db.raw(
+          `SELECT t.name AS table_name, i.name, i.is_unique,
+            STRING_AGG(c.name, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns
+           FROM sys.indexes i
+           JOIN sys.tables t ON t.object_id = i.object_id
+           JOIN sys.schemas sc ON sc.schema_id = t.schema_id
+           JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+           JOIN sys.columns c ON c.object_id = i.object_id AND c.column_id = ic.column_id
+           WHERE sc.name = ? AND i.type > 0
+           GROUP BY t.name, i.name, i.is_unique ORDER BY t.name, i.name`, [s],
+        );
+        return (Array.isArray(r) ? r : []).map((row: any) => ({ name: row.name, tableName: row.table_name, unique: row.is_unique === 1, columns: row.columns ?? '' }));
+      }
+      default: return [];
+    }
+  } catch { return []; }
+}
+
+interface FunctionInfo {
+  name: string;
+  kind: 'FUNCTION' | 'PROCEDURE';
+  returnType: string;
+  language: string;
+}
+
+async function listFunctions(c: ConnectionPayload, schema?: string): Promise<FunctionInfo[]> {
+  const db = getKnex(c);
+  try {
+    switch (c.type) {
+      case 'pg': {
+        const s = schema || 'public';
+        const r = await db.raw(
+          `SELECT p.proname AS name,
+            CASE WHEN p.prokind = 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END AS kind,
+            COALESCE(pg_catalog.pg_get_function_result(p.oid), 'void') AS return_type,
+            l.lanname AS language
+           FROM pg_catalog.pg_proc p
+           JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+           JOIN pg_catalog.pg_language l ON l.oid = p.prolang
+           WHERE n.nspname = ? AND p.prokind NOT IN ('a', 'w')
+           ORDER BY p.prokind, p.proname`, [s],
+        );
+        return (r.rows ?? []).map((row: any) => ({ name: row.name, kind: row.kind as 'FUNCTION' | 'PROCEDURE', returnType: row.return_type, language: row.language }));
+      }
+      case 'mysql': {
+        const [rows] = await db.raw(
+          `SELECT ROUTINE_NAME AS name, ROUTINE_TYPE AS kind,
+            COALESCE(DTD_IDENTIFIER,'void') AS return_type, 'sql' AS language
+           FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE()
+           ORDER BY ROUTINE_TYPE, ROUTINE_NAME`,
+        );
+        return (rows as any[]).map((row) => ({ name: row.name, kind: row.kind, returnType: row.return_type, language: 'sql' }));
+      }
+      case 'mssql': {
+        const s = schema || 'dbo';
+        const r = await db.raw(
+          `SELECT ROUTINE_NAME AS name, ROUTINE_TYPE AS kind,
+            COALESCE(DATA_TYPE,'void') AS return_type, 'T-SQL' AS language
+           FROM INFORMATION_SCHEMA.ROUTINES
+           WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE IN ('FUNCTION','PROCEDURE')
+           ORDER BY ROUTINE_TYPE, ROUTINE_NAME`,
+          [s],
+        );
+        return (Array.isArray(r) ? r : []).map((row: any) => ({ name: row.name, kind: row.kind, returnType: row.return_type, language: 'T-SQL' }));
+      }
+      default: return [];
+    }
+  } catch { return []; }
+}
+
+interface TriggerInfo {
+  name: string;
+  tableName: string;
+  event: string;
+  timing: string;
+}
+
+async function listTriggers(c: ConnectionPayload, schema?: string): Promise<TriggerInfo[]> {
+  const db = getKnex(c);
+  try {
+    switch (c.type) {
+      case 'pg': {
+        const s = schema || 'public';
+        const r = await db.raw(
+          `SELECT trigger_name AS name, event_object_table AS table_name,
+            string_agg(event_manipulation, '/' ORDER BY event_manipulation) AS event,
+            action_timing AS timing
+           FROM information_schema.triggers WHERE trigger_schema = ?
+           GROUP BY trigger_name, event_object_table, action_timing
+           ORDER BY event_object_table, trigger_name`,
+          [s],
+        );
+        return (r.rows ?? []).map((row: any) => ({ name: row.name, tableName: row.table_name, event: row.event ?? '', timing: row.timing ?? '' }));
+      }
+      case 'mysql': {
+        const [rows] = await db.raw(
+          `SELECT TRIGGER_NAME AS name, EVENT_OBJECT_TABLE AS table_name,
+            EVENT_MANIPULATION AS event, ACTION_TIMING AS timing
+           FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()
+           ORDER BY EVENT_OBJECT_TABLE, TRIGGER_NAME`,
+        );
+        return (rows as any[]).map((row) => ({ name: row.name, tableName: row.table_name, event: row.event, timing: row.timing }));
+      }
+      case 'sqlite': {
+        const rows = await db.raw(`SELECT name, tbl_name AS table_name FROM sqlite_master WHERE type='trigger' ORDER BY tbl_name, name`);
+        return (Array.isArray(rows) ? rows : []).map((row: any) => ({ name: row.name, tableName: row.table_name, event: '', timing: '' }));
+      }
+      case 'mssql': {
+        const s = schema || 'dbo';
+        const r = await db.raw(
+          `SELECT t.name, OBJECT_NAME(t.parent_id) AS table_name, '' AS event, '' AS timing
+           FROM sys.triggers t
+           JOIN sys.tables tab ON tab.object_id = t.parent_id
+           JOIN sys.schemas sc ON sc.schema_id = tab.schema_id
+           WHERE sc.name = ? AND t.is_disabled = 0
+           ORDER BY table_name, t.name`,
+          [s],
+        );
+        return (Array.isArray(r) ? r : []).map((row: any) => ({ name: row.name, tableName: row.table_name, event: '', timing: '' }));
+      }
+      default: return [];
+    }
+  } catch { return []; }
+}
+
+async function listSequences(c: ConnectionPayload, schema?: string): Promise<string[]> {
+  if (c.type !== 'pg') return [];
+  try {
+    const db = getKnex(c);
+    const s = schema || 'public';
+    const r = await db.raw(`SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = ? ORDER BY sequence_name`, [s]);
+    return (r.rows ?? []).map((row: any) => row.sequence_name as string);
+  } catch { return []; }
+}
+
 // ── Schema diff ────────────────────────────────────────────────────────
 
 interface SchemaSnapshot {
@@ -865,6 +1124,39 @@ function isGitRepo(cwd?: string): boolean {
   }
 }
 
+function resolveDockerExecutable(): string | null {
+  const configured = process.env.DOCKER_PATH?.trim();
+  const candidates = [
+    configured,
+    '/opt/homebrew/bin/docker',
+    '/usr/local/bin/docker',
+    '/Applications/Docker.app/Contents/Resources/bin/docker',
+    '/usr/bin/docker',
+    'C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe',
+  ].filter(Boolean) as string[];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  return null;
+}
+
+function dockerEnv(): NodeJS.ProcessEnv {
+  const extraPaths = [
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    '/Applications/Docker.app/Contents/Resources/bin',
+    '/usr/bin',
+    'C:\\Program Files\\Docker\\Docker\\resources\\bin',
+  ];
+
+  return {
+    ...process.env,
+    PATH: [...extraPaths, process.env.PATH ?? ''].filter(Boolean).join(path.delimiter),
+  };
+}
+
 // ── IPC registration ───────────────────────────────────────────────────
 
 export function registerDbIPC() {
@@ -881,6 +1173,115 @@ export function registerDbIPC() {
   });
 
   // ── DB operations ────────────────────────────────────────────────────
+  // provision
+  ipcMain.handle('db:provision', async (_, payload: {
+    type: DBType;
+    containerName?: string;
+    port?: number;
+    database: string;
+    user?: string;
+    password?: string;
+    filename?: string;
+  }) => {
+    if (payload.type === 'sqlite') {
+      const filePath = payload.filename ?? payload.database;
+      if (!filePath?.trim()) return { ok: false, error: 'File path required' };
+      try {
+        mkdirSync(path.dirname(filePath), { recursive: true });
+        const sqliteDb = new Database(filePath);
+        sqliteDb.close();
+        return {
+          ok: true,
+          connection: {
+            type: 'sqlite' as const,
+            host: 'localhost',
+            port: 0,
+            database: filePath,
+            user: '',
+            password: '',
+            filename: filePath,
+          },
+        };
+      } catch (err: any) {
+        return { ok: false, error: err.message ?? String(err) };
+      }
+    }
+
+    const { containerName, port, database, user, password } = payload;
+    if (!containerName?.trim()) return { ok: false, error: 'Container name required' };
+    if (!database?.trim()) return { ok: false, error: 'Database name required' };
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(containerName)) {
+      return { ok: false, error: 'Invalid container name. Use only letters, digits, hyphens, underscores and dots.' };
+    }
+
+    const dockerImages: Partial<Record<DBType, string>> = {
+      pg: 'postgres:16',
+      mysql: 'mysql:8',
+      mssql: 'mcr.microsoft.com/mssql/server:2022-latest',
+    };
+    const image = dockerImages[payload.type];
+    if (!image) return { ok: false, error: `Unsupported type: ${payload.type}` };
+
+    const defaultPorts: Partial<Record<DBType, number>> = { pg: 5432, mysql: 3306, mssql: 1433 };
+    const hostPort = port ?? defaultPorts[payload.type] ?? 0;
+    const containerPort = defaultPorts[payload.type] ?? 0;
+
+    try {
+      const portMapping = `${hostPort}:${containerPort}`;
+      const dockerArgs = payload.type === 'pg'
+        ? [
+            'run', '-d', '--name', containerName,
+            '-e', `POSTGRES_DB=${database}`,
+            '-e', `POSTGRES_USER=${user ?? 'postgres'}`,
+            '-e', `POSTGRES_PASSWORD=${password ?? ''}`,
+            '-p', portMapping, image,
+          ]
+        : payload.type === 'mysql'
+          ? [
+              'run', '-d', '--name', containerName,
+              '-e', `MYSQL_DATABASE=${database}`,
+              '-e', `MYSQL_ROOT_PASSWORD=${password ?? ''}`,
+              '-p', portMapping, image,
+            ]
+          : [
+              'run', '-d', '--name', containerName,
+              '-e', 'ACCEPT_EULA=Y',
+              '-e', `MSSQL_SA_PASSWORD=${password ?? ''}`,
+              '-p', portMapping, image,
+            ];
+
+      const dockerExecutable = resolveDockerExecutable() ?? 'docker';
+      const dockerResult = spawnSync(dockerExecutable, dockerArgs, {
+        encoding: 'utf-8',
+        timeout: 60000,
+        env: dockerEnv(),
+      });
+      if (dockerResult.error) throw dockerResult.error;
+      if (dockerResult.status !== 0) {
+        throw new Error((dockerResult.stderr as string | null)?.trim() ?? 'docker command failed');
+      }
+      const containerId = (dockerResult.stdout as string).trim();
+      return {
+        ok: true,
+        containerId,
+        connection: {
+          type: payload.type,
+          host: 'localhost',
+          port: hostPort,
+          database,
+          user: user ?? (payload.type === 'mysql' ? 'root' : payload.type === 'pg' ? 'postgres' : 'sa'),
+          password: password ?? '',
+        },
+      };
+    } catch (err: any) {
+      if (err?.code === 'ENOENT') {
+        return { ok: false, error: 'Docker CLI was not found. Install Docker Desktop and make sure the docker binary is available to the app.' };
+      }
+      const message = err.stderr?.trim() ?? err.message ?? String(err);
+      return { ok: false, error: message };
+    }
+  });
+
   // test-connection
   ipcMain.handle('db:test-connection', async (_, payload: { connectionId?: string; connection?: ConnectionPayload }) => {
     const connection = resolveConnection(payload);
@@ -958,6 +1359,42 @@ export function registerDbIPC() {
     const connection = resolveConnection(payload);
     const count = await getRowCount(connection, payload.table, payload.schema);
     return { count };
+  });
+
+  // indexes
+  // schema-indexes
+  ipcMain.handle('db:schema-indexes', async (_, payload: { connectionId?: string; connection?: ConnectionPayload; schema?: string }) => {
+    const connection = resolveConnection(payload);
+    const indexes = await listSchemaIndexes(connection, payload.schema);
+    return { indexes };
+  });
+
+  // indexes (per-table)
+  ipcMain.handle('db:indexes', async (_, payload: { connectionId?: string; connection?: ConnectionPayload; table: string; schema?: string }) => {
+    const connection = resolveConnection(payload);
+    const indexes = await listIndexes(connection, payload.table, payload.schema);
+    return { indexes };
+  });
+
+  // functions
+  ipcMain.handle('db:functions', async (_, payload: { connectionId?: string; connection?: ConnectionPayload; schema?: string }) => {
+    const connection = resolveConnection(payload);
+    const functions = await listFunctions(connection, payload.schema);
+    return { functions };
+  });
+
+  // triggers
+  ipcMain.handle('db:triggers', async (_, payload: { connectionId?: string; connection?: ConnectionPayload; schema?: string }) => {
+    const connection = resolveConnection(payload);
+    const triggers = await listTriggers(connection, payload.schema);
+    return { triggers };
+  });
+
+  // sequences
+  ipcMain.handle('db:sequences', async (_, payload: { connectionId?: string; connection?: ConnectionPayload; schema?: string }) => {
+    const connection = resolveConnection(payload);
+    const sequences = await listSequences(connection, payload.schema);
+    return { sequences };
   });
 
   // create-database

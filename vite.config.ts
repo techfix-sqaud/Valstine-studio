@@ -3,7 +3,10 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
 export default defineConfig({
-  base: './',
+  // Absolute base so asset paths (/assets/...) resolve correctly from any
+  // route depth in both Electron (valstine://app/) and the web deployment.
+  // './' would break reloads at nested routes (e.g. /studio -> ./assets/... resolves wrong).
+  base: '/',
   server: {
     host: "::",
     port: 8080,
@@ -19,6 +22,10 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/download': {
         target: 'http://localhost:3001',
         changeOrigin: true,
       },

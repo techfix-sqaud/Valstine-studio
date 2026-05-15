@@ -1,18 +1,26 @@
-import { useEffect, useState } from "react";
-import { Download, RefreshCw, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertCircle, Download, RefreshCw, X } from "lucide-react";
 
 type UpdateState =
   | { phase: "idle" }
   | { phase: "available"; version: string }
   | { phase: "downloading"; percent: number }
-  | { phase: "ready"; version: string };
+  | { phase: "ready"; version: string }
+  | { phase: "error"; message: string };
 
 declare global {
   interface Window {
     updaterAPI?: {
-      onUpdateAvailable: (cb: (info: { version: string }) => void) => () => void;
+      onCheckingForUpdate: (cb: () => void) => () => void;
+      onUpdateNotAvailable: (cb: () => void) => () => void;
+      onUpdateAvailable: (
+        cb: (info: { version: string }) => void,
+      ) => () => void;
       onDownloadProgress: (cb: (p: { percent: number }) => void) => () => void;
-      onUpdateDownloaded: (cb: (info: { version: string }) => void) => () => void;
+      onUpdateDownloaded: (
+        cb: (info: { version: string }) => void,
+      ) => () => void;
+      onUpdateError: (cb: (info: { message: string }) => void) => () => void;
       installUpdate: () => void;
       checkForUpdates: () => void;
     };
@@ -21,34 +29,62 @@ declare global {
 
 export function UpdateNotification() {
   const [state, setState] = useState<UpdateState>({ phase: "idle" });
-  const [dismissed, setDismissed] = useState(false);
+  // Track which version was dismissed so a NEW version re-shows the banner.
+  const dismissedVersion = useRef<string | null>(null);
 
   useEffect(() => {
     const api = window.updaterAPI;
     if (!api) return;
 
-    const offAvailable = api.onUpdateAvailable(({ version }) =>
-      setState({ phase: "available", version })
-    );
+    const offChecking = api.onCheckingForUpdate(() => {
+      setState((s) => (s.phase === "ready" ? s : { phase: "idle" }));
+    });
+
+    const offNotAvailable = api.onUpdateNotAvailable(() => {
+      setState((s) => (s.phase === "ready" ? s : { phase: "idle" }));
+    });
+
+    const offAvailable = api.onUpdateAvailable(({ version }) => {
+      // Re-show the banner whenever a genuinely new version is detected.
+      if (dismissedVersion.current !== version) {
+        setState({ phase: "available", version });
+      }
+    });
+
     const offProgress = api.onDownloadProgress(({ percent }) =>
       setState((s) =>
         s.phase === "available" || s.phase === "downloading"
           ? { phase: "downloading", percent }
-          : s
-      )
+          : s,
+      ),
     );
-    const offDownloaded = api.onUpdateDownloaded(({ version }) =>
-      setState({ phase: "ready", version })
+
+    const offDownloaded = api.onUpdateDownloaded(({ version }) => {
+      dismissedVersion.current = null; // always show the "restart" prompt
+      setState({ phase: "ready", version });
+    });
+
+    const offError = api.onUpdateError(({ message }) =>
+      setState({ phase: "error", message }),
     );
 
     return () => {
+      offChecking();
+      offNotAvailable();
       offAvailable();
       offProgress();
       offDownloaded();
+      offError();
     };
   }, []);
 
-  if (state.phase === "idle" || dismissed) return null;
+  const handleDismiss = () => {
+    // Remember which version was dismissed so we don't re-show for that same version.
+    if (state.phase === "available") dismissedVersion.current = state.version;
+    setState({ phase: "idle" });
+  };
+
+  if (state.phase === "idle") return null;
 
   return (
     <div
@@ -61,7 +97,9 @@ export function UpdateNotification() {
             <span className="text-xs font-semibold text-white">
               Update available — v{state.version}
             </span>
-            <span className="text-[11px] text-slate-400">Downloading in the background…</span>
+            <span className="text-[11px] text-slate-400">
+              Downloading in the background…
+            </span>
           </>
         )}
 
@@ -82,9 +120,24 @@ export function UpdateNotification() {
         {state.phase === "ready" && (
           <>
             <span className="text-xs font-semibold text-white">
-              v{state.version} ready to install
+              Update ready — Restart now
             </span>
-            <span className="text-[11px] text-slate-400">Restart to apply the update.</span>
+            <span className="text-[11px] text-slate-400">
+              {(state as { phase: "ready"; version: string }).version
+                ? `v${(state as { phase: "ready"; version: string }).version} downloaded and ready to install.`
+                : "Restart to apply the update."}
+            </span>
+          </>
+        )}
+
+        {state.phase === "error" && (
+          <>
+            <span className="text-xs font-semibold text-red-400">
+              Update failed
+            </span>
+            <span className="text-[11px] text-slate-400 line-clamp-2">
+              {(state as { phase: "error"; message: string }).message}
+            </span>
           </>
         )}
       </div>
@@ -104,8 +157,12 @@ export function UpdateNotification() {
           <Download className="h-4 w-4 animate-pulse text-blue-400" />
         )}
 
+        {state.phase === "error" && (
+          <AlertCircle className="h-4 w-4 text-red-400" />
+        )}
+
         <button
-          onClick={() => setDismissed(true)}
+          onClick={handleDismiss}
           className="rounded-md p-1 text-slate-500 transition hover:text-slate-300"
           aria-label="Dismiss"
         >

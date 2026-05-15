@@ -5,6 +5,7 @@ import {
   DatabaseZap,
   FileCode2,
   FolderKanban,
+  LayoutTemplate,
   NotebookTabs,
   PanelsTopLeft,
   PlayCircle,
@@ -21,6 +22,7 @@ export type AnalystActivityId =
   | "tables"
   | "ai"
   | "viz"
+  | "templates"
   | "migrations"
   | "notebook"
   | "settings";
@@ -45,7 +47,8 @@ export const analystActivities: AnalystActivityItem[] = [
   { id: "runner", label: "Query Runner", icon: PlayCircle },
   { id: "tables", label: "Data Tables", icon: TableProperties },
   { id: "ai", label: "AI Assistant", icon: Bot },
-  { id: "viz", label: "Visualizations", icon: ChartColumnBig },
+  { id: "viz", label: "BI Studio", icon: ChartColumnBig },
+  { id: "templates", label: "Excel Kit", icon: LayoutTemplate },
   { id: "migrations", label: "Migrations", icon: Waypoints },
   { id: "notebook", label: "Notebook", icon: NotebookTabs },
   { id: "settings", label: "Settings", icon: Settings2 },
@@ -208,6 +211,120 @@ export const visualizationCards = [
     title: "Warehouse Risk",
     detail: "Scatter plot of anomaly frequency vs. fulfillment delay.",
   },
+];
+
+export const biStudioBoards = [
+  {
+    title: "Executive Pulse Board",
+    detail:
+      "Cross-filtered KPIs, trend lines, and region selectors wired to the live warehouse result set.",
+  },
+  {
+    title: "Ops Drilldown Canvas",
+    detail:
+      "A Tableau-style canvas with metric shelves, comparison panels, and anomaly callouts for investigators.",
+  },
+  {
+    title: "Story Mode Review",
+    detail:
+      "Package charts, narrative annotations, and action flags into a stakeholder-ready walkthrough.",
+  },
+];
+
+export const dataSourceConnectors = [
+  {
+    title: "Operational Databases",
+    detail:
+      "PostgreSQL, MySQL, SQLite, and warehouse mirrors with schema discovery and live queries.",
+    status: "Live connection ready",
+  },
+  {
+    title: "Spreadsheet Feeds",
+    detail:
+      "Excel workbooks, CSV drops, and governed analyst packs mapped into reusable workbook templates.",
+    status: "Auto-refresh mappings",
+  },
+  {
+    title: "Large-Scale Data Systems",
+    detail:
+      "Lakehouse extracts, event streams, and staged data products prepared for incremental refresh workflows.",
+    status: "Incremental sync enabled",
+  },
+];
+
+export const dashboardBuilderLanes = [
+  {
+    title: "Fields Shelf",
+    detail:
+      "Drag dimensions, measures, and calculated metrics onto rows, columns, and comparison wells.",
+  },
+  {
+    title: "Filter + Drill Controls",
+    detail:
+      "Apply dashboard-level filters, cross-highlighting, and drill paths without touching SQL.",
+  },
+  {
+    title: "Share + Publish",
+    detail:
+      "Package the board as a live link, ops brief, or Excel-backed stakeholder handoff.",
+  },
+];
+
+export const liveAnalysisModes = [
+  "Live warehouse sync",
+  "15-second refresh cadence",
+  "Auto-recompute visual layers",
+  "Alert on source drift",
+];
+
+export const visualizationLibrary = [
+  {
+    title: "Geo Maps",
+    detail:
+      "Territory, campus, and warehouse overlays with live metric shading and drill targets.",
+  },
+  {
+    title: "Heatmaps",
+    detail:
+      "Cohort, retention, and anomaly-density heatmaps for high-signal comparisons.",
+  },
+  {
+    title: "Trend Lines",
+    detail:
+      "Rolling averages, variance bands, and forecast overlays for revenue and usage tracking.",
+  },
+  {
+    title: "KPI Boards",
+    detail:
+      "Card strips and executive scoreboards with thresholds, deltas, and status color rules.",
+  },
+];
+
+export const excelTemplateLibrary = [
+  {
+    title: "Finance Monthly Close",
+    format: "Excel workbook · 6 tabs",
+    detail:
+      "Variance checks, pivot-ready summaries, and a governed assumptions sheet for finance handoff.",
+  },
+  {
+    title: "Ops Reconciliation Pack",
+    format: "Excel workbook · 4 tabs",
+    detail:
+      "Warehouse exports, SKU exception pivots, and a QA sheet built for data engineering triage.",
+  },
+  {
+    title: "Executive KPI Brief",
+    format: "Excel workbook · 5 tabs",
+    detail:
+      "Board-ready charts, commentary prompts, and an audit trail sheet for refresh ownership.",
+  },
+];
+
+export const templateWorkflowChecklist = [
+  "Map live query results into named workbook ranges",
+  "Lock formulas, color rules, and governance notes before export",
+  "Publish a refresh-ready Excel pack for finance, ops, or leadership",
 ];
 
 export const notebookHighlights = [
