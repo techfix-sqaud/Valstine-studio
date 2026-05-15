@@ -13,10 +13,13 @@ const ptyMap = new Map<any, ReturnType<typeof Bun.spawn>>();
 // Absolute path to the pty-worker so it can be spawned from anywhere
 const PTY_WORKER = path.join(import.meta.dir, "pty-worker.cjs");
 
-// SERVER_PORT takes precedence so dev (which also has PORT set by the platform)
-// doesn't collide with Vite. Production uses PORT directly via the `start` script.
-const PORT = parseInt(process.env.SERVER_PORT ?? process.env.PORT ?? "3001", 10);
 const isProd = process.env.NODE_ENV === "production";
+const DEFAULT_PORT = isProd ? "8080" : "3001";
+
+// SERVER_PORT takes precedence so local dev can pin the API to 3001 even when
+// PORT is set by a hosting platform. Production defaults to 8080 for PaaS
+// readiness probes when PORT is not injected.
+const PORT = parseInt(process.env.SERVER_PORT ?? process.env.PORT ?? DEFAULT_PORT, 10);
 const DIST_DIR = path.join(import.meta.dir, "..", "dist");
 
 // DATA_DIR: override via env var for cloud/container deployments where the
