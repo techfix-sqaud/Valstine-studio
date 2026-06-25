@@ -10,7 +10,7 @@ import {
 import { useAppStore } from "@/store/app-store";
 import { DBConnection, DBType } from "@/lib/mock-data";
 import { DB_TYPE_META, testConnection, uploadSqliteFile } from "@/lib/api";
-import { Loader2, CheckCircle2, XCircle, Upload } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Upload, ShieldAlert } from "lucide-react";
 
 const DB_TYPES: DBType[] = ["pg", "mysql", "sqlite", "mssql"];
 
@@ -189,17 +189,45 @@ export function ConnectionDialog() {
             </div>
           </div>
 
-          {/* Name */}
-          <div>
-            <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
-              Connection Name
-            </label>
-            <input
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder={`My ${meta.label} Database`}
-              className="w-full h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            />
+          {/* Name + Color */}
+          <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
+            <div>
+              <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
+                Connection Name
+              </label>
+              <input
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder={`My ${meta.label} Database`}
+                className="w-full h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
+                Color
+              </label>
+              <div className="flex items-center gap-1 h-8">
+                {[
+                  { value: undefined, label: "None", bg: "bg-muted-foreground/30" },
+                  { value: "#ef4444", label: "Red — Production", bg: "bg-red-500" },
+                  { value: "#f97316", label: "Orange — Staging", bg: "bg-orange-500" },
+                  { value: "#eab308", label: "Yellow — QA", bg: "bg-yellow-500" },
+                  { value: "#22c55e", label: "Green — Dev", bg: "bg-green-500" },
+                  { value: "#3b82f6", label: "Blue — Local", bg: "bg-blue-500" },
+                  { value: "#a855f7", label: "Purple", bg: "bg-purple-500" },
+                ].map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    title={preset.label}
+                    onClick={() => setForm((f) => ({ ...f, color: preset.value }))}
+                    className={`w-5 h-5 rounded-full ${preset.bg} transition-transform ${
+                      form.color === preset.value ? "scale-125 ring-2 ring-white ring-offset-1 ring-offset-panel-bg" : "hover:scale-110"
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
 
           {isSQLite ? (
@@ -350,6 +378,21 @@ export function ConnectionDialog() {
               )}
             </>
           )}
+
+          {/* Production environment toggle */}
+          <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={form.isProduction ?? false}
+              onChange={(e) => setForm((f) => ({ ...f, isProduction: e.target.checked }))}
+              className="rounded"
+            />
+            <ShieldAlert className={`w-3.5 h-3.5 ${form.isProduction ? "text-destructive" : "text-muted-foreground"}`} />
+            <span className={form.isProduction ? "text-destructive font-medium" : "text-muted-foreground"}>
+              Production Environment
+            </span>
+            <span className="text-muted-foreground/60">(enables destructive-query safety guard)</span>
+          </label>
 
           {/* Test result */}
           {testResult && (

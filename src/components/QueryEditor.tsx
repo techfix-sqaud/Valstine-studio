@@ -4,6 +4,8 @@ import type * as Monaco from "monaco-editor";
 import { useAppStore } from "@/store/app-store";
 import { registerSQLCompletion } from "@/lib/sql-completion";
 import { useSchemaCache } from "@/hooks/use-schema-cache";
+import { formatSQL } from "@/lib/sql-formatter";
+import { setActiveEditor } from "@/lib/editor-ref";
 
 export function QueryEditor() {
   const { tabs, activeTabId, updateTabContent, theme } = useAppStore();
@@ -11,6 +13,7 @@ export function QueryEditor() {
 
   const { cacheRef, fetchColumnsForTable } = useSchemaCache();
   const completionDisposable = useRef<Monaco.IDisposable | null>(null);
+  const formatterDisposable = useRef<Monaco.IDisposable | null>(null);
 
   // Stable refs so the completion provider closure never goes stale
   const getCacheFn = useCallback(() => cacheRef.current, [cacheRef]);
@@ -67,13 +70,48 @@ export function QueryEditor() {
     });
   };
 
-  const handleMount: OnMount = (_editor, monaco) => {
-    // Clean up any previous provider registration (theme switch recreates editor)
+  const handleMount: OnMount = (editor, monaco) => {
+    // Register this as the active editor for toolbar actions
+    setActiveEditor(editor);
+
+    // Clean up previous providers
     completionDisposable.current?.dispose();
+    formatterDisposable.current?.dispose();
+
     completionDisposable.current = registerSQLCompletion(
       monaco,
       getCacheFn,
       fetchColumnsFn,
+    );
+
+    // Register SQL document formatter (Ctrl+Shift+F / Shift+Alt+F)
+    formatterDisposable.current = monaco.languages.registerDocumentFormattingEditProvider("sql", {
+      provideDocumentFormattingEdits(model) {
+        const formatted = formatSQL(model.getValue());
+        return [
+          {
+            range: model.getFullModelRange(),
+            text: formatted,
+          },
+        ];
+      },
+    });
+
+    // Ctrl+Enter: run selected text if a selection exists, otherwise run full content
+    editor.addCommand(
+      monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+      () => {
+        const selection = editor.getSelection();
+        const model = editor.getModel();
+        if (selection && model && !selection.isEmpty()) {
+          const selectedText = model.getValueInRange(selection).trim();
+          if (selectedText) {
+            useAppStore.getState().runQuery(selectedText);
+            return;
+          }
+        }
+        useAppStore.getState().executeQuery();
+      },
     );
   };
 
@@ -113,7 +151,6 @@ export function QueryEditor() {
           suggest: {
             showKeywords: true,
             showSnippets: true,
-            // Ensure our custom provider fires even without typing a full word
             filterGraceful: true,
           },
           quickSuggestions: {
@@ -121,6 +158,7 @@ export function QueryEditor() {
             comments: false,
             strings: false,
           },
+          quickSuggestionsDelay: 400,
           wordWrap: "off",
           tabSize: 2,
         }}

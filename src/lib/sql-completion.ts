@@ -262,12 +262,17 @@ export function registerSQLCompletion(
   fetchColumns: FetchColumnsFn,
 ): Monaco.IDisposable {
   return monaco.languages.registerCompletionItemProvider("sql", {
-    triggerCharacters: [".", " ", "\n"],
+    triggerCharacters: [".", " "],
 
     async provideCompletionItems(
       model,
       position,
     ): Promise<Monaco.languages.CompletionList> {
+      // Don't trigger on empty/whitespace-only lines
+      const currentLine = model.getLineContent(position.lineNumber);
+      const textUpToCursor = currentLine.slice(0, position.column - 1);
+      if (!textUpToCursor.trim()) return { suggestions: [] };
+
       const textBefore = model.getValueInRange({
         startLineNumber: 1,
         startColumn: 1,

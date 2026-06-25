@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useAppStore } from "@/store/app-store";
+import { getActiveEditor } from "@/lib/editor-ref";
 import { cn } from "@/lib/utils";
 
 interface MenuItem {
@@ -15,12 +16,29 @@ interface MenuDef {
   items: MenuItem[];
 }
 
+// Helper: fire a Monaco editor command, no-op if editor is not focused
+function editorCmd(cmd: string) {
+  const ed = getActiveEditor();
+  if (!ed) return;
+  ed.focus();
+  ed.trigger("menu", cmd, null);
+}
+
+function editorAction(actionId: string) {
+  const ed = getActiveEditor();
+  if (!ed) return;
+  ed.focus();
+  ed.getAction(actionId)?.run();
+}
+
 function useMenus(): MenuDef[] {
   const {
     toggleTheme,
     toggleSidebar,
     toggleCommandPalette,
     executeQuery,
+    runQuery,
+    runAllStatements,
     setBottomPanelVisible,
     bottomPanelVisible,
     sidebarOpen,
@@ -29,6 +47,8 @@ function useMenus(): MenuDef[] {
     openDashboardTab,
     openSchemaTab,
     setActiveBottomTab,
+    openSettingsPanel,
+    openConnectionDialog,
   } = useAppStore();
 
   return [
@@ -50,21 +70,69 @@ function useMenus(): MenuDef[] {
         { label: "separator", separator: true },
         { label: "Open Schema Diagram", action: openSchemaTab },
         { label: "separator", separator: true },
-        { label: "Preferences", shortcut: "⌘,", disabled: true },
+        {
+          label: "New Connection...",
+          action: () => openConnectionDialog(),
+        },
+        { label: "separator", separator: true },
+        {
+          label: "Preferences",
+          shortcut: "⌘,",
+          action: () => openSettingsPanel("general"),
+        },
       ],
     },
     {
       label: "Edit",
       items: [
-        { label: "Undo", shortcut: "⌘Z", disabled: true },
-        { label: "Redo", shortcut: "⇧⌘Z", disabled: true },
+        {
+          label: "Undo",
+          shortcut: "⌘Z",
+          action: () => editorCmd("undo"),
+        },
+        {
+          label: "Redo",
+          shortcut: "⇧⌘Z",
+          action: () => editorCmd("redo"),
+        },
         { label: "separator", separator: true },
-        { label: "Cut", shortcut: "⌘X", disabled: true },
-        { label: "Copy", shortcut: "⌘C", disabled: true },
-        { label: "Paste", shortcut: "⌘V", disabled: true },
+        {
+          label: "Cut",
+          shortcut: "⌘X",
+          action: () => editorCmd("editor.action.clipboardCutAction"),
+        },
+        {
+          label: "Copy",
+          shortcut: "⌘C",
+          action: () => editorCmd("editor.action.clipboardCopyAction"),
+        },
+        {
+          label: "Paste",
+          shortcut: "⌘V",
+          action: () => editorCmd("editor.action.clipboardPasteAction"),
+        },
         { label: "separator", separator: true },
-        { label: "Find", shortcut: "⌘F", disabled: true },
-        { label: "Replace", shortcut: "⌥⌘F", disabled: true },
+        {
+          label: "Find",
+          shortcut: "⌘F",
+          action: () => editorAction("actions.find"),
+        },
+        {
+          label: "Replace",
+          shortcut: "⌥⌘F",
+          action: () => editorAction("editor.action.startFindReplaceAction"),
+        },
+        { label: "separator", separator: true },
+        {
+          label: "Format Document",
+          shortcut: "⇧⌥F",
+          action: () => editorAction("editor.action.formatDocument"),
+        },
+        {
+          label: "Select All",
+          shortcut: "⌘A",
+          action: () => editorCmd("selectAll"),
+        },
       ],
     },
     {
@@ -91,6 +159,19 @@ function useMenus(): MenuDef[] {
           action: () => setBottomPanelVisible(!bottomPanelVisible),
         },
         { label: "separator", separator: true },
+        {
+          label: "Results",
+          action: () => { setActiveBottomTab("results"); setBottomPanelVisible(true); },
+        },
+        {
+          label: "Query History",
+          action: () => { setActiveBottomTab("history"); setBottomPanelVisible(true); },
+        },
+        {
+          label: "Chart",
+          action: () => { setActiveBottomTab("chart"); setBottomPanelVisible(true); },
+        },
+        { label: "separator", separator: true },
         { label: "Toggle Theme", action: toggleTheme },
       ],
     },
@@ -115,19 +196,75 @@ function useMenus(): MenuDef[] {
         },
         {
           label: "Connections",
-          action: () =>
-            useAppStore.getState().setActiveSidebarTab("connections"),
+          action: () => useAppStore.getState().setActiveSidebarTab("connections"),
+        },
+        {
+          label: "AI Chat",
+          action: () => useAppStore.getState().setActiveSidebarTab("ai"),
+        },
+        {
+          label: "Git",
+          action: () => useAppStore.getState().setActiveSidebarTab("git"),
         },
       ],
     },
     {
       label: "Run",
       items: [
-        { label: "Execute Query", shortcut: "⌘↵", action: executeQuery },
-        { label: "Execute Selection", shortcut: "⇧⌘↵", disabled: true },
+        {
+          label: "Execute Query",
+          shortcut: "⌘↵",
+          action: executeQuery,
+        },
+        {
+          label: "Execute Selection",
+          shortcut: "⇧⌘↵",
+          action: () => {
+            const ed = getActiveEditor();
+            const sel = ed?.getSelection();
+            const model = ed?.getModel();
+            if (sel && model && !sel.isEmpty()) {
+              const text = model.getValueInRange(sel).trim();
+              if (text) { runQuery(text); return; }
+            }
+            executeQuery();
+          },
+        },
+        {
+          label: "Run All Statements",
+          action: runAllStatements,
+        },
         { label: "separator", separator: true },
-        { label: "Explain Query", disabled: true },
-        { label: "Explain Analyze", disabled: true },
+        {
+          label: "Explain Query",
+          shortcut: "⇧⌘E",
+          action: () => {
+            const ed = getActiveEditor();
+            const model = ed?.getModel();
+            const sql = model?.getValue()?.trim();
+            if (!sql) return;
+            // Trigger the EditorToolbar explain by dispatching a custom event
+            window.dispatchEvent(new CustomEvent("valstine:explain", { detail: { sql } }));
+          },
+        },
+        {
+          label: "Dry Run (no commit)",
+          action: () => useAppStore.getState().toggleDryRun(),
+        },
+      ],
+    },
+    {
+      label: "Schema",
+      items: [
+        {
+          label: "Open Schema Diagram",
+          action: openSchemaTab,
+        },
+        { label: "separator", separator: true },
+        {
+          label: "Refresh Schema",
+          action: () => (useAppStore.getState() as any).refreshSchema?.(),
+        },
       ],
     },
     {
@@ -167,10 +304,19 @@ function useMenus(): MenuDef[] {
     {
       label: "Help",
       items: [
-        { label: "Welcome", disabled: true },
-        { label: "Documentation", disabled: true },
+        {
+          label: "Documentation",
+          action: () => window.open("https://docs.valstinestudio.com", "_blank"),
+        },
+        {
+          label: "Keyboard Shortcuts",
+          action: () => openSettingsPanel("shortcuts" as any),
+        },
         { label: "separator", separator: true },
-        { label: "About Valstine Studio", disabled: true },
+        {
+          label: "About Valstine Studio",
+          action: () => openSettingsPanel("about"),
+        },
       ],
     },
   ];

@@ -63,21 +63,14 @@ export default defineConfig({
     hmr: {
       overlay: false,
     },
-    proxy: {
-      '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-      },
-      '/download': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-      },
-      '/terminal': {
-        target: 'ws://localhost:3001',
-        ws: true,
-        changeOrigin: true,
-      },
-    },
+    proxy: (() => {
+      const backendPort = process.env.SERVER_PORT ?? '3001';
+      return {
+        '/api': { target: `http://localhost:${backendPort}`, changeOrigin: true },
+        '/download': { target: `http://localhost:${backendPort}`, changeOrigin: true },
+        '/terminal': { target: `ws://localhost:${backendPort}`, ws: true, changeOrigin: true },
+      };
+    })(),
   },
   preview: {
     host: '::',

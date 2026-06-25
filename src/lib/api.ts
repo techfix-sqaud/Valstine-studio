@@ -262,13 +262,39 @@ export async function schemaDiff(
   target: DBConnection,
   sourceSchema?: string,
   targetSchema?: string,
+  sourceDatabaseOverride?: string,
+  targetDatabaseOverride?: string,
 ): Promise<SchemaDiffResult> {
   return post('/api/schema-diff', {
     ...( source.password ? { source: toPayload(source) } : { sourceConnectionId: source.id }),
     ...( target.password ? { target: toPayload(target) } : { targetConnectionId: target.id }),
     sourceSchema,
     targetSchema,
+    sourceDatabase: sourceDatabaseOverride,
+    targetDatabase: targetDatabaseOverride,
   });
+}
+
+export async function explainQuery(
+  conn: DBConnection,
+  query: string,
+): Promise<{ ok: boolean; plan: any; dbType: string; error?: string }> {
+  return post('/api/explain', { ...toBody(conn), query });
+}
+
+export interface SearchResult {
+  schema: string;
+  table: string;
+  column: string;
+  rows: Record<string, unknown>[];
+}
+
+export async function searchDatabase(
+  conn: DBConnection,
+  term: string,
+  maxPerTable = 5,
+): Promise<{ ok: boolean; results: SearchResult[]; term: string; error?: string }> {
+  return post('/api/search', { ...toBody(conn), term, maxPerTable });
 }
 
 // ─── Git ───
@@ -404,6 +430,29 @@ export interface SavedApiRequest {
   headers: { key: string; value: string; enabled: boolean }[];
   body: string;
   savedAt: string;
+}
+
+export interface SavedQuery {
+  id: string;
+  name: string;
+  description: string;
+  sql: string;
+  tags: string[];
+  connectionType: string;
+  savedAt: string;
+}
+
+export async function appGetSavedQueries(): Promise<SavedQuery[]> {
+  const r = await get<{ ok: boolean; queries: SavedQuery[] }>('/api/app/saved-queries');
+  return r.queries ?? [];
+}
+
+export async function appSaveQuery(q: Omit<SavedQuery, 'id' | 'savedAt'> & { id?: string }): Promise<{ ok: boolean; id?: string; error?: string }> {
+  return post('/api/app/saved-queries', q);
+}
+
+export async function appDeleteSavedQuery(id: string): Promise<{ ok: boolean; error?: string }> {
+  return request('DELETE', `/api/app/saved-queries/${id}`);
 }
 
 export async function appGetApiRequests(): Promise<SavedApiRequest[]> {

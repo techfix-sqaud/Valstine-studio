@@ -3,6 +3,25 @@ import { DBConnection, QueryTab, QueryResult, defaultTabs } from '@/lib/mock-dat
 import * as api from '@/lib/api';
 import { DEFAULT_PRESET_ID, DEFAULT_TERMINAL_FONT, DEFAULT_TERMINAL_FONT_SIZE, getPresetById } from '@/lib/terminal-themes';
 import type { SourceControlProvider, SourceControlSettings } from '@/lib/source-control';
+import { extractVariables, substituteVariables } from '@/lib/query-variables';
+import { detectDestructiveOperation, type DestructiveOp } from '@/lib/query-safety';
+
+// Check every semicolon-separated statement, not just the first
+function detectAnyDestructive(sql: string): DestructiveOp | null {
+  const stmts = sql.split(';').map(s => s.trim()).filter(Boolean);
+  for (const s of stmts) {
+    const op = detectDestructiveOperation(s);
+    if (op) return op;
+  }
+  return null;
+}
+
+// Wrap a query in a BEGIN/ROLLBACK transaction for dry-run mode
+function wrapDryRun(sql: string, dbType: string): string {
+  const begin = dbType === 'mssql' ? 'BEGIN TRANSACTION;' : dbType === 'mysql' ? 'START TRANSACTION;' : 'BEGIN;';
+  const rollback = dbType === 'mssql' ? 'ROLLBACK TRANSACTION;' : 'ROLLBACK;';
+  return `${begin}\n${sql.trim().replace(/;?\s*$/, '')};\n${rollback}`;
+}
 
 export interface TerminalSettings {
   presetId: string;
@@ -126,9 +145,17 @@ interface AppState {
 
   // Results
   bottomPanelVisible: boolean;
-  activeBottomTab: 'results' | 'terminal' | 'problems' | 'history';
+  activeBottomTab: 'results' | 'chart' | 'terminal' | 'problems' | 'history';
   queryResult: QueryResult | null;
   isExecuting: boolean;
+
+  // Query variables
+  variablesModalOpen: boolean;
+  pendingVariables: string[];
+  pendingQueryText: string;
+  openVariablesModal: (vars: string[], query: string) => void;
+  closeVariablesModal: () => void;
+  runQueryWithVariables: (values: Record<string, string>) => Promise<void>;
 
   // Command palette
   commandPaletteOpen: boolean;
@@ -152,6 +179,27 @@ interface AppState {
   // Provision dialog (create DB from scratch)
   provisionDialogOpen: boolean;
 
+  // Safety guard (destructive queries on production connections)
+  safetyGuardOpen: boolean;
+  safetyGuardInfo: DestructiveOp | null;
+  safetyGuardPending: string;
+  safetyGuardRowCount: number | null;
+  safetyGuardCountLoading: boolean;
+  openSafetyGuard: (op: DestructiveOp, query: string) => void;
+  closeSafetyGuard: () => void;
+  proceedWithDangerousQuery: () => Promise<void>;
+
+  // Dry-run mode (wraps query in BEGIN/ROLLBACK)
+  dryRunMode: boolean;
+  dryRunExecuted: boolean;
+  toggleDryRun: () => void;
+
+  // Multi-query results
+  multiQueryResults: { index: number; sql: string; result: QueryResult }[] | null;
+  activeMultiResultIndex: number;
+  setActiveMultiResult: (index: number) => void;
+  runAllStatements: () => Promise<void>;
+
   // Actions
   toggleTheme: () => void;
   toggleSidebar: () => void;
@@ -160,9 +208,11 @@ interface AppState {
   addTab: (tab: QueryTab) => void;
   closeTab: (id: string) => void;
   updateTabContent: (id: string, content: string) => void;
+  reorderTabs: (draggedId: string, targetId: string, before: boolean) => void;
   setBottomPanelVisible: (v: boolean) => void;
-  setActiveBottomTab: (tab: 'results' | 'terminal' | 'problems' | 'history') => void;
+  setActiveBottomTab: (tab: 'results' | 'chart' | 'terminal' | 'problems' | 'history') => void;
   executeQuery: () => void;
+  runQuery: (queryText: string) => Promise<void>;
   toggleCommandPalette: () => void;
   setActiveConnection: (id: string) => void;
   completeOnboarding: () => void;
@@ -270,12 +320,64 @@ export const useAppStore = create<AppState>((set, get) => ({
   isExecuting: false,
   commandPaletteOpen: false,
   queryHistory: [],
+  variablesModalOpen: false,
+  pendingVariables: [],
+  pendingQueryText: '',
   connectionDialogOpen: false,
   editingConnection: null,
   settingsPanelOpen: false,
   settingsPanelSection: 'general',
   settings: defaultSettings(),
   provisionDialogOpen: false,
+  safetyGuardOpen: false,
+  safetyGuardInfo: null,
+  safetyGuardPending: '',
+  safetyGuardRowCount: null,
+  safetyGuardCountLoading: false,
+  dryRunMode: false,
+  dryRunExecuted: false,
+  toggleDryRun: () => set(s => ({ dryRunMode: !s.dryRunMode })),
+  multiQueryResults: null,
+  activeMultiResultIndex: 0,
+  setActiveMultiResult: (index) => set({ activeMultiResultIndex: index }),
+  runAllStatements: async () => {
+    const state = get();
+    const activeTab = state.tabs.find(t => t.id === state.activeTabId);
+    const queryText = activeTab?.content ?? '';
+    const connId = state.activeConnectionId;
+    const conn = state.connections.find(c => c.id === connId);
+    if (!queryText.trim() || !conn) return;
+
+    // Split on semicolons, skip empty/comment-only chunks
+    const statements = queryText
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s && !/^--/.test(s));
+
+    if (statements.length <= 1) { get().executeQuery(); return; }
+
+    set({ isExecuting: true, bottomPanelVisible: true, activeBottomTab: 'results', multiQueryResults: null, queryResult: null, dryRunExecuted: false });
+
+    const results: { index: number; sql: string; result: QueryResult }[] = [];
+    for (let i = 0; i < statements.length; i++) {
+      const sql = statements[i];
+      const label = sql.slice(0, 80) + (sql.length > 80 ? '…' : '');
+      const start = performance.now();
+      try {
+        const result: QueryResult = await api.executeQuery(conn, sql);
+        const elapsed = Math.round(performance.now() - start);
+        if (!result.executionTime) result.executionTime = elapsed;
+        results.push({ index: i, sql: label, result });
+      } catch (err: any) {
+        const elapsed = Math.round(performance.now() - start);
+        results.push({ index: i, sql: label, result: { columns: [], rows: [], rowCount: 0, executionTime: elapsed, status: 'error', message: err.message ?? 'Failed' } });
+      }
+    }
+
+    // Show the last result in the main queryResult slot (for compatibility)
+    const lastResult = results[results.length - 1]?.result ?? null;
+    set({ isExecuting: false, multiQueryResults: results, activeMultiResultIndex: results.length - 1, queryResult: lastResult });
+  },
   aiMessages: [
     {
       id: 'ai-welcome',
@@ -306,6 +408,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateTabContent: (id, content) => set((s) => ({
     tabs: s.tabs.map((t) => t.id === id ? { ...t, content, isDirty: true } : t),
   })),
+  reorderTabs: (draggedId, targetId, before) => set((s) => {
+    if (draggedId === targetId) return s;
+    const tabs = [...s.tabs];
+    const fromIdx = tabs.findIndex((t) => t.id === draggedId);
+    if (fromIdx === -1) return s;
+    const [dragged] = tabs.splice(fromIdx, 1);
+    const toIdx = tabs.findIndex((t) => t.id === targetId);
+    if (toIdx === -1) return s;
+    tabs.splice(before ? toIdx : toIdx + 1, 0, dragged);
+    return { tabs };
+  }),
   setBottomPanelVisible: (v) => set({ bottomPanelVisible: v }),
   setActiveBottomTab: (tab) => set({ activeBottomTab: tab, bottomPanelVisible: true }),
   executeQuery: async () => {
@@ -316,6 +429,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const conn = state.connections.find((c) => c.id === connId);
 
     if (!queryText.trim()) return;
+
+    // Intercept query variables
+    const vars = extractVariables(queryText);
+    if (vars.length > 0) {
+      get().openVariablesModal(vars, queryText);
+      return;
+    }
+
     if (!conn) {
       set({
         queryResult: { columns: [], rows: [], rowCount: 0, executionTime: 0, status: 'error', message: 'No active connection. Please connect to a database first.' },
@@ -325,11 +446,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
 
-    set({ isExecuting: true, bottomPanelVisible: true, activeBottomTab: 'results', queryResult: null });
+    // Safety guard for production connections (checks every statement)
+    if (conn.isProduction) {
+      const op = detectAnyDestructive(queryText);
+      if (op) { get().openSafetyGuard(op, queryText); return; }
+    }
+
+    // Dry-run: wrap in a transaction that rolls back automatically
+    const isDryRun = get().dryRunMode;
+    const finalQuery = isDryRun ? wrapDryRun(queryText, conn.type) : queryText;
+
+    set({ isExecuting: true, bottomPanelVisible: true, activeBottomTab: 'results', queryResult: null, multiQueryResults: null, dryRunExecuted: false });
 
     const start = performance.now();
     try {
-      const result: QueryResult = await api.executeQuery(conn, queryText);
+      const result: QueryResult = await api.executeQuery(conn, finalQuery);
       const elapsed = Math.round(performance.now() - start);
       if (!result.executionTime) result.executionTime = elapsed;
 
@@ -346,7 +477,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
       const newHistory = [entry, ...get().queryHistory].slice(0, 200);
       api.appAddHistoryEntry(entry).catch(() => {});
-      set({ queryResult: result, isExecuting: false, queryHistory: newHistory });
+      set({ queryResult: result, isExecuting: false, queryHistory: newHistory, dryRunExecuted: isDryRun });
     } catch (err: any) {
       const elapsed = Math.round(performance.now() - start);
       const errorResult: QueryResult = {
@@ -367,6 +498,141 @@ export const useAppStore = create<AppState>((set, get) => ({
         rowCount: 0,
         status: 'error',
         errorMessage: errorResult.message,
+      };
+      const newHistory = [entry, ...get().queryHistory].slice(0, 200);
+      api.appAddHistoryEntry(entry).catch(() => {});
+      set({ queryResult: errorResult, isExecuting: false, queryHistory: newHistory });
+    }
+  },
+  runQuery: async (queryText: string) => {
+    const state = get();
+    const connId = state.activeConnectionId;
+    const conn = state.connections.find((c) => c.id === connId);
+
+    if (!queryText.trim()) return;
+
+    // Intercept query variables
+    const vars = extractVariables(queryText);
+    if (vars.length > 0) {
+      get().openVariablesModal(vars, queryText);
+      return;
+    }
+
+    if (!conn) {
+      set({
+        queryResult: { columns: [], rows: [], rowCount: 0, executionTime: 0, status: 'error', message: 'No active connection.' },
+        bottomPanelVisible: true,
+        activeBottomTab: 'results',
+      });
+      return;
+    }
+
+    // Safety guard for production connections (checks every statement)
+    if (conn.isProduction) {
+      const op = detectAnyDestructive(queryText);
+      if (op) { get().openSafetyGuard(op, queryText); return; }
+    }
+
+    // Dry-run: wrap in a transaction that rolls back automatically
+    const isDryRun = get().dryRunMode;
+    const finalQuery = isDryRun ? wrapDryRun(queryText, conn.type) : queryText;
+
+    set({ isExecuting: true, bottomPanelVisible: true, activeBottomTab: 'results', queryResult: null, multiQueryResults: null, dryRunExecuted: false });
+
+    const start = performance.now();
+    try {
+      const result: QueryResult = await api.executeQuery(conn, finalQuery);
+      const elapsed = Math.round(performance.now() - start);
+      if (!result.executionTime) result.executionTime = elapsed;
+
+      const entry: QueryHistoryEntry = {
+        id: `hist-${Date.now()}`,
+        query: queryText.trim(),
+        connectionId: connId,
+        connectionName: conn.name,
+        executedAt: new Date().toISOString(),
+        executionTime: result.executionTime,
+        rowCount: result.rowCount,
+        status: result.status,
+        errorMessage: result.message,
+      };
+      const newHistory = [entry, ...get().queryHistory].slice(0, 200);
+      api.appAddHistoryEntry(entry).catch(() => {});
+      set({ queryResult: result, isExecuting: false, queryHistory: newHistory, dryRunExecuted: isDryRun });
+    } catch (err: any) {
+      const elapsed = Math.round(performance.now() - start);
+      const errorResult: QueryResult = {
+        columns: [], rows: [], rowCount: 0, executionTime: elapsed, status: 'error',
+        message: err.message ?? 'Failed to connect to query server.',
+      };
+      const entry: QueryHistoryEntry = {
+        id: `hist-${Date.now()}`,
+        query: queryText.trim(),
+        connectionId: connId,
+        connectionName: conn.name,
+        executedAt: new Date().toISOString(),
+        executionTime: elapsed,
+        rowCount: 0,
+        status: 'error',
+        errorMessage: errorResult.message,
+      };
+      const newHistory = [entry, ...get().queryHistory].slice(0, 200);
+      api.appAddHistoryEntry(entry).catch(() => {});
+      set({ queryResult: errorResult, isExecuting: false, queryHistory: newHistory });
+    }
+  },
+  openVariablesModal: (vars, query) => set({ variablesModalOpen: true, pendingVariables: vars, pendingQueryText: query }),
+  closeVariablesModal: () => set({ variablesModalOpen: false, pendingVariables: [], pendingQueryText: '' }),
+  runQueryWithVariables: async (values) => {
+    const state = get();
+    const substituted = substituteVariables(state.pendingQueryText, values);
+    set({ variablesModalOpen: false, pendingVariables: [], pendingQueryText: '' });
+    await get().runQuery(substituted);
+  },
+
+  openSafetyGuard: (op, query) => {
+    set({ safetyGuardOpen: true, safetyGuardInfo: op, safetyGuardPending: query, safetyGuardRowCount: null, safetyGuardCountLoading: !!op.countQuery });
+    if (op.countQuery) {
+      const conn = get().connections.find(c => c.id === get().activeConnectionId);
+      if (conn) {
+        api.executeQuery(conn, op.countQuery)
+          .then(r => {
+            const val = r.rows?.[0]?.['affected_rows'] ?? r.rows?.[0]?.['row_count'] ?? null;
+            set({ safetyGuardRowCount: val !== null ? Number(val) : null, safetyGuardCountLoading: false });
+          })
+          .catch(() => set({ safetyGuardCountLoading: false }));
+      }
+    }
+  },
+  closeSafetyGuard: () => set({ safetyGuardOpen: false, safetyGuardInfo: null, safetyGuardPending: '', safetyGuardRowCount: null, safetyGuardCountLoading: false }),
+  proceedWithDangerousQuery: async () => {
+    const pending = get().safetyGuardPending;
+    set({ safetyGuardOpen: false, safetyGuardInfo: null, safetyGuardPending: '', safetyGuardRowCount: null, safetyGuardCountLoading: false });
+    if (!pending) return;
+    const state = get();
+    const connId = state.activeConnectionId;
+    const conn = state.connections.find(c => c.id === connId);
+    if (!conn) return;
+    set({ isExecuting: true, bottomPanelVisible: true, activeBottomTab: 'results', queryResult: null });
+    const start = performance.now();
+    try {
+      const result: QueryResult = await api.executeQuery(conn, pending);
+      const elapsed = Math.round(performance.now() - start);
+      if (!result.executionTime) result.executionTime = elapsed;
+      const entry: QueryHistoryEntry = {
+        id: `hist-${Date.now()}`, query: pending.trim(), connectionId: connId, connectionName: conn.name,
+        executedAt: new Date().toISOString(), executionTime: result.executionTime,
+        rowCount: result.rowCount, status: result.status, errorMessage: result.message,
+      };
+      const newHistory = [entry, ...get().queryHistory].slice(0, 200);
+      api.appAddHistoryEntry(entry).catch(() => {});
+      set({ queryResult: result, isExecuting: false, queryHistory: newHistory });
+    } catch (err: any) {
+      const elapsed = Math.round(performance.now() - start);
+      const errorResult: QueryResult = { columns: [], rows: [], rowCount: 0, executionTime: elapsed, status: 'error', message: err.message ?? 'Execution failed.' };
+      const entry: QueryHistoryEntry = {
+        id: `hist-${Date.now()}`, query: pending.trim(), connectionId: connId, connectionName: conn.name,
+        executedAt: new Date().toISOString(), executionTime: elapsed, rowCount: 0, status: 'error', errorMessage: errorResult.message,
       };
       const newHistory = [entry, ...get().queryHistory].slice(0, 200);
       api.appAddHistoryEntry(entry).catch(() => {});

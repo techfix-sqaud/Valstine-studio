@@ -13,6 +13,8 @@ export interface DBConnection {
   ssl?: boolean;
   sslRejectUnauthorized?: boolean;
   status: 'connected' | 'disconnected';
+  color?: string; // hex color for visual environment distinction
+  isProduction?: boolean; // enables destructive-query safety guard
 }
 
 export interface DBTable {
