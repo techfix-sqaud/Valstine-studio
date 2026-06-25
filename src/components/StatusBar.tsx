@@ -34,10 +34,20 @@ export function StatusBar() {
   }, []);
 
   return (
-    <div className="h-6 bg-statusbar flex items-center justify-between px-2 text-statusbar-foreground text-[11px] shrink-0 select-none overflow-hidden">
+    <div
+      className="h-6 bg-statusbar flex items-center justify-between px-2 text-statusbar-foreground text-[11px] shrink-0 select-none overflow-hidden"
+      style={conn?.color ? { borderTop: `2px solid ${conn.color}` } : undefined}
+    >
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <div className="flex items-center gap-1 min-w-0">
-          <Database className="w-3 h-3 shrink-0" />
+          {conn?.color ? (
+            <span
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              style={{ backgroundColor: conn.color }}
+            />
+          ) : (
+            <Database className="w-3 h-3 shrink-0" />
+          )}
           <span className="truncate max-w-[100px] sm:max-w-none">
             {conn?.name ?? "No connection"}
           </span>

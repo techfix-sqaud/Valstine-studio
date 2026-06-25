@@ -41,6 +41,34 @@ function ColumnItem({ col, tableName }: { col: api.RemoteColumnInfo; tableName: 
           store.addTab({ id: `tab-${Date.now()}`, title: `select_${col.name}.sql`, content: `SELECT ${col.name}\nFROM ${tableName}\nLIMIT 100;`, connectionId: store.activeConnectionId, isDirty: false });
         },
       },
+      {
+        label: `Find References to "${col.name}"`,
+        action: () => {
+          const store = useAppStore.getState();
+          const conn = store.connections.find(c => c.id === store.activeConnectionId);
+          if (!conn) return;
+          // Build a query that searches views, functions, and triggers for this column name
+          let sql = "";
+          if (conn.type === "pg") {
+            sql = `-- Find references to column "${col.name}" in views, functions, triggers\nSELECT\n  'view' AS kind,\n  table_schema AS schema_name,\n  table_name AS object_name,\n  NULL AS routine_name\nFROM information_schema.view_column_usage\nWHERE column_name = '${col.name}'\n\nUNION ALL\n\nSELECT\n  'routine' AS kind,\n  routine_schema AS schema_name,\n  NULL AS object_name,\n  routine_name\nFROM information_schema.routines\nWHERE routine_definition ILIKE '%${col.name}%'\n\nUNION ALL\n\nSELECT\n  'trigger' AS kind,\n  trigger_schema AS schema_name,\n  event_object_table AS object_name,\n  trigger_name AS routine_name\nFROM information_schema.triggers\nWHERE action_statement ILIKE '%${col.name}%'\n\nORDER BY kind, schema_name, object_name;`;
+          } else if (conn.type === "mysql") {
+            sql = `-- Find references to column "${col.name}" in views and routines\nSELECT 'view' AS kind, TABLE_SCHEMA AS schema_name, TABLE_NAME AS object_name, NULL AS routine_name\nFROM information_schema.VIEW_TABLE_USAGE\nWHERE COLUMN_NAME = '${col.name}'\n\nUNION ALL\n\nSELECT 'routine' AS kind, ROUTINE_SCHEMA, NULL, ROUTINE_NAME\nFROM information_schema.ROUTINES\nWHERE ROUTINE_DEFINITION LIKE '%${col.name}%'\n\nORDER BY kind, schema_name;`;
+          } else if (conn.type === "mssql") {
+            sql = `-- Find references to column "${col.name}" in views, stored procedures, and triggers\nSELECT\n  o.type_desc AS kind,\n  s.name AS schema_name,\n  o.name AS object_name\nFROM sys.sql_modules m\nJOIN sys.objects o ON o.object_id = m.object_id\nJOIN sys.schemas s ON s.schema_id = o.schema_id\nWHERE m.definition LIKE '%${col.name}%'\n  AND o.type IN ('V','P','TR','FN','IF','TF')\nORDER BY o.type_desc, o.name;`;
+          } else {
+            sql = `-- SQLite: search for "${col.name}" in view definitions\nSELECT 'view' AS kind, name AS object_name, sql AS definition\nFROM sqlite_master\nWHERE type IN ('view','trigger')\n  AND sql LIKE '%${col.name}%'\nORDER BY type, name;`;
+          }
+          const tabId = `ref-${Date.now()}`;
+          store.addTab({
+            id: tabId,
+            title: `refs_${col.name}.sql`,
+            content: sql,
+            connectionId: store.activeConnectionId,
+            isDirty: false,
+          });
+          store.setActiveTab(tabId);
+        },
+      },
       { separator: true, label: "sep" },
       { label: `Type: ${col.type}`, disabled: true },
       { label: col.nullable ? "Nullable: Yes" : "Nullable: No", disabled: true },
@@ -100,13 +128,22 @@ function IndexesGroup({ tableName, schema, indent }: { tableName: string; schema
 }
 
 // ── Table / View node ────────────────────────────────────────────────────────
-function TableItem({ table, schema }: { table: api.RemoteTableInfo; schema: string }) {
+function TableItem({ table, schema, eagerRowCount }: { table: api.RemoteTableInfo; schema: string; eagerRowCount?: number | null }) {
   const [open, setOpen] = useState(false);
   const [columns, setColumns] = useState<api.RemoteColumnInfo[]>([]);
   const [loading, setLoading] = useState(false);
-  const [rowCount, setRowCount] = useState<number | null>(null);
+  const [rowCount, setRowCount] = useState<number | null>(eagerRowCount ?? null);
   const conn = useAppStore((s) => s.connections.find((c) => c.id === s.activeConnectionId));
   const addTab = useAppStore((s) => s.addTab);
+
+  // Eagerly fetch row count in background so badge shows without expanding
+  useEffect(() => {
+    if (eagerRowCount !== undefined) return; // parent already provided it
+    if (!conn || table.type !== "table") return;
+    let cancelled = false;
+    api.fetchRowCount(conn, table.name, schema).then((n) => { if (!cancelled) setRowCount(n); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [conn?.id, table.name, schema]);
 
   const loadColumns = useCallback(async () => {
     if (!conn || columns.length > 0) return;
@@ -120,9 +157,6 @@ function TableItem({ table, schema }: { table: api.RemoteTableInfo; schema: stri
     setOpen(next);
     if (next) {
       loadColumns();
-      if (rowCount === null && conn && table.type === "table") {
-        api.fetchRowCount(conn, table.name, schema).then(setRowCount).catch(() => {});
-      }
     }
   };
 

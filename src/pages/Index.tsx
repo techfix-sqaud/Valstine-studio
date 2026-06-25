@@ -17,6 +17,8 @@ import { ConnectionDialog } from "@/components/ConnectionDialog";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { ProvisionDialog } from "@/components/ProvisionDialog";
 import { ContextMenuProvider } from "@/components/ContextMenu";
+import { VariablesModal } from "@/components/VariablesModal";
+import { DestructiveQueryGuard } from "@/components/DestructiveQueryGuard";
 import { useAppStore } from "@/store/app-store";
 import { useEffect } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -34,6 +36,10 @@ const Index = () => {
     activeTabId,
     theme,
     initApp,
+    variablesModalOpen,
+    pendingVariables,
+    closeVariablesModal,
+    runQueryWithVariables,
   } = useAppStore();
   const isMobile = useIsMobile();
   const sidebarPanelRef = usePanelRef();
@@ -53,16 +59,9 @@ const Index = () => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        e.preventDefault();
-        executeQuery();
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [executeQuery]);
+  // Cmd+Enter is handled inside the Monaco editor via addCommand (see QueryEditor.tsx),
+  // so it correctly runs only the selected text when a selection exists.
+  // The toolbar Run button covers the case when the editor is not focused.
 
   // Listen for native Electron menu events
   useEffect(() => {
@@ -237,6 +236,13 @@ const Index = () => {
         <ConnectionDialog />
         <SettingsPanel />
         <ProvisionDialog />
+        <VariablesModal
+          open={variablesModalOpen}
+          variables={pendingVariables}
+          onRun={runQueryWithVariables}
+          onClose={closeVariablesModal}
+        />
+        <DestructiveQueryGuard />
       </div>
     </ContextMenuProvider>
   );

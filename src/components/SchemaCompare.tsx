@@ -117,9 +117,7 @@ export default function SchemaCompare() {
         result = await schemaDiff(conn, conn, sourceSchema, targetSchema);
       } else if (mode === "databases") {
         if (!conn || !sourceDb || !targetDb) return;
-        const srcConn = { ...conn, database: sourceDb };
-        const tgtConn = { ...conn, database: targetDb };
-        result = await schemaDiff(srcConn, tgtConn);
+        result = await schemaDiff(conn, conn, undefined, undefined, sourceDb, targetDb);
       } else {
         const source = connected.find((c) => c.id === sourceId);
         const target = connected.find((c) => c.id === targetId);

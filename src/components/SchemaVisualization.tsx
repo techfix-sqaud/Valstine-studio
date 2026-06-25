@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Key, Columns3, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { Key, Columns3, ZoomIn, ZoomOut, Maximize2, Loader2, RefreshCw } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
-import { mockTables, DBTable } from '@/lib/mock-data';
+import { DBTable, DBColumn } from '@/lib/mock-data';
+import * as api from '@/lib/api';
 
 interface TablePosition {
   x: number;
@@ -50,10 +51,43 @@ function getInitialPositions(tables: DBTable[]): Record<string, TablePosition> {
   return positions;
 }
 
+async function loadRealSchema(conn: import('@/lib/mock-data').DBConnection): Promise<DBTable[]> {
+  const schemas = await api.fetchSchemas(conn);
+
+  const tableResults = await Promise.allSettled(
+    schemas.map(schema => api.fetchTables(conn, schema).then(ts => ts.map(t => ({ ...t, schema }))))
+  );
+
+  const allTables: { name: string; schema: string }[] = [];
+  tableResults.forEach(result => {
+    if (result.status === 'fulfilled') allTables.push(...result.value.map(t => ({ name: t.name, schema: t.schema })));
+  });
+
+  const colResults = await Promise.allSettled(
+    allTables.map(t => api.fetchColumns(conn, t.name, t.schema))
+  );
+
+  const dbTables: DBTable[] = [];
+  allTables.forEach((t, i) => {
+    const result = colResults[i];
+    const columns: DBColumn[] = result.status === 'fulfilled'
+      ? result.value.map(c => ({ name: c.name, type: c.type, nullable: c.nullable, primaryKey: c.primaryKey }))
+      : [];
+    dbTables.push({ name: t.name, schema: t.schema, rowCount: 0, columns });
+  });
+
+  return dbTables;
+}
+
 export function SchemaVisualization() {
   const activeConnectionId = useAppStore((s) => s.activeConnectionId);
-  const tables = mockTables[activeConnectionId] || [];
-  const [positions, setPositions] = useState<Record<string, TablePosition>>(() => getInitialPositions(tables));
+  const connections = useAppStore((s) => s.connections);
+  const conn = connections.find(c => c.id === activeConnectionId && c.status === 'connected');
+
+  const [tables, setTables] = useState<DBTable[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [positions, setPositions] = useState<Record<string, TablePosition>>({});
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState<string | null>(null);
@@ -61,11 +95,27 @@ export function SchemaVisualization() {
   const dragOffset = useRef({ x: 0, y: 0 });
   const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const svgRef = useRef<SVGSVGElement>(null);
-  const relationships = getRelationships(tables);
 
-  useEffect(() => {
-    setPositions(getInitialPositions(tables));
-  }, [activeConnectionId]);
+  const load = useCallback(async () => {
+    if (!conn) { setTables([]); setError(''); return; }
+    setLoading(true);
+    setError('');
+    try {
+      const result = await loadRealSchema(conn);
+      setTables(result);
+      setPositions(getInitialPositions(result));
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to load schema');
+    } finally {
+      setLoading(false);
+    }
+  }, [conn?.id, conn?.status]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const relationships = getRelationships(tables);
 
   const handleMouseDown = useCallback((tableName: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -126,30 +176,72 @@ export function SchemaVisualization() {
 
     let fromX: number, toX: number;
     if (fromRight < toPos.x) {
-      fromX = fromRight;
-      toX = toPos.x;
+      fromX = fromRight; toX = toPos.x;
     } else if (toRight < fromPos.x) {
-      fromX = fromPos.x;
-      toX = toRight;
+      fromX = fromPos.x; toX = toRight;
     } else {
-      fromX = fromRight;
-      toX = toRight;
+      fromX = fromRight; toX = toRight;
     }
 
     const midX = (fromX + toX) / 2;
     return `M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`;
   };
 
-  const resetView = () => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-  };
+  const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+
+  if (!conn) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center text-muted-foreground text-sm gap-2">
+        <Columns3 className="w-8 h-8 opacity-30" />
+        <span>Connect to a database to view the schema diagram</span>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center text-muted-foreground text-sm gap-2">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        <span>Loading schema…</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center text-sm gap-3">
+        <span className="text-destructive">{error}</span>
+        <button onClick={load} className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-secondary text-foreground text-xs hover:bg-secondary/70">
+          <RefreshCw className="w-3.5 h-3.5" /> Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (tables.length === 0) {
+    return (
+      <div className="flex flex-col h-full items-center justify-center text-muted-foreground text-sm gap-2">
+        <Columns3 className="w-8 h-8 opacity-30" />
+        <span>No tables found in this database</span>
+        <button onClick={load} className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-secondary text-foreground text-xs hover:bg-secondary/70">
+          <RefreshCw className="w-3.5 h-3.5" /> Refresh
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-background">
       <div className="flex items-center justify-between px-3 py-2 border-b border-panel-border shrink-0">
-        <span className="text-xs font-medium text-foreground">Schema Diagram</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-foreground">Schema Diagram</span>
+          <span className="text-[10px] text-muted-foreground">{tables.length} tables</span>
+        </div>
         <div className="flex items-center gap-1">
+          <button onClick={load} className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors" title="Refresh schema">
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+          <div className="w-px h-4 bg-border mx-0.5" />
           <button onClick={() => setZoom(z => Math.min(z + 0.15, 2))} className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors">
             <ZoomIn className="w-3.5 h-3.5" />
           </button>
@@ -170,6 +262,7 @@ export function SchemaVisualization() {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onWheel={(e) => setZoom(z => Math.min(2, Math.max(0.3, z - e.deltaY * 0.001)))}
       >
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
@@ -202,7 +295,7 @@ export function SchemaVisualization() {
             const height = getTableHeight(table);
             return (
               <g
-                key={table.name}
+                key={`${table.schema}.${table.name}`}
                 className="table-node"
                 onMouseDown={(e) => handleMouseDown(table.name, e)}
                 style={{ cursor: 'move' }}
@@ -214,8 +307,11 @@ export function SchemaVisualization() {
                 {/* Header */}
                 <rect x={pos.x} y={pos.y} width={TABLE_WIDTH} height={HEADER_HEIGHT} rx={6} className="fill-primary" />
                 <rect x={pos.x} y={pos.y + HEADER_HEIGHT - 6} width={TABLE_WIDTH} height={6} className="fill-primary" />
-                <text x={pos.x + 12} y={pos.y + 20} className="fill-primary-foreground text-[12px] font-semibold" fontFamily="var(--font-sans)">
-                  {table.schema}.{table.name}
+                <text x={pos.x + 12} y={pos.y + 13} className="fill-primary-foreground" fontFamily="var(--font-mono)" fontSize={9} opacity={0.7}>
+                  {table.schema}
+                </text>
+                <text x={pos.x + 12} y={pos.y + 25} className="fill-primary-foreground" fontFamily="var(--font-mono)" fontSize={11} fontWeight="600">
+                  {table.name}
                 </text>
 
                 {/* Columns */}
@@ -227,14 +323,14 @@ export function SchemaVisualization() {
                         <line x1={pos.x + 8} y1={cy + ROW_HEIGHT} x2={pos.x + TABLE_WIDTH - 8} y2={cy + ROW_HEIGHT} className="stroke-border" strokeWidth={0.5} />
                       )}
                       {col.primaryKey ? (
-                        <text x={pos.x + 12} y={cy + 16} className="fill-warning text-[10px]" fontFamily="var(--font-sans)">🔑</text>
+                        <text x={pos.x + 12} y={cy + 16} fontFamily="var(--font-sans)" fontSize={10}>🔑</text>
                       ) : (
-                        <text x={pos.x + 12} y={cy + 16} className="fill-muted-foreground text-[10px]" fontFamily="var(--font-sans)">○</text>
+                        <text x={pos.x + 12} y={cy + 16} className="fill-muted-foreground" fontFamily="var(--font-sans)" fontSize={10}>○</text>
                       )}
-                      <text x={pos.x + 28} y={cy + 16} className="fill-foreground text-[11px]" fontFamily="var(--font-mono)">
+                      <text x={pos.x + 28} y={cy + 16} className="fill-foreground" fontFamily="var(--font-mono)" fontSize={11}>
                         {col.name}
                       </text>
-                      <text x={pos.x + TABLE_WIDTH - 8} y={cy + 16} textAnchor="end" className="fill-muted-foreground text-[9px]" fontFamily="var(--font-mono)">
+                      <text x={pos.x + TABLE_WIDTH - 8} y={cy + 16} textAnchor="end" className="fill-muted-foreground" fontFamily="var(--font-mono)" fontSize={9}>
                         {col.type}
                       </text>
                     </g>

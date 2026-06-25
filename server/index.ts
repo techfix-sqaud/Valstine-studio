@@ -89,8 +89,9 @@ appDb.run(`CREATE TABLE IF NOT EXISTS connections (
   status TEXT DEFAULT 'disconnected',
   created_at TEXT DEFAULT (datetime('now'))
 )`);
-// Migrate existing databases that don't have the ssl_reject_unauthorized column yet
-try { appDb.run(`ALTER TABLE connections ADD COLUMN ssl_reject_unauthorized INTEGER DEFAULT 1`); } catch { /* column already exists */ }
+// Migrate existing databases that don't have these columns yet
+try { appDb.run(`ALTER TABLE connections ADD COLUMN ssl_reject_unauthorized INTEGER DEFAULT 1`); } catch { /* already exists */ }
+try { appDb.run(`ALTER TABLE connections ADD COLUMN color TEXT`); } catch { /* already exists */ }
 
 appDb.run(`CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
@@ -116,6 +117,16 @@ appDb.run(`CREATE TABLE IF NOT EXISTS api_requests (
   url TEXT NOT NULL,
   headers TEXT NOT NULL DEFAULT '[]',
   body TEXT NOT NULL DEFAULT '',
+  saved_at TEXT NOT NULL
+)`);
+
+appDb.run(`CREATE TABLE IF NOT EXISTS saved_queries (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  sql TEXT NOT NULL,
+  tags TEXT DEFAULT '[]',
+  connection_type TEXT DEFAULT '',
   saved_at TEXT NOT NULL
 )`);
 
@@ -263,8 +274,10 @@ function destroyKnex(c: ConnectionPayload) {
   }
 }
 
-// Resolve a full connection payload from either an inline connection or a stored connectionId
-function resolveConnection(body: { connectionId?: string; connection?: ConnectionPayload }): ConnectionPayload {
+// Resolve a full connection payload from either an inline connection or a stored connectionId.
+// databaseOverride lets callers (e.g. schema-diff) swap the database on an existing saved connection
+// without needing to re-supply the encrypted password.
+function resolveConnection(body: { connectionId?: string; connection?: ConnectionPayload; databaseOverride?: string }): ConnectionPayload {
   if (body.connectionId) {
     const row = appDb.prepare("SELECT * FROM connections WHERE id = ?").get(body.connectionId) as any;
     if (!row) throw new Error(`Connection '${body.connectionId}' not found`);
@@ -272,7 +285,7 @@ function resolveConnection(body: { connectionId?: string; connection?: Connectio
       type: row.type as DBType,
       host: row.host ?? "localhost",
       port: row.port ?? undefined,
-      database: row.database_name,
+      database: body.databaseOverride ?? row.database_name,
       user: row.username ?? undefined,
       password: row.password ? decryptPassword(row.password) : undefined,
       filename: row.filename ?? undefined,
@@ -1220,6 +1233,136 @@ Bun.serve({
         return respond({ ok: true });
       }
 
+      // POST /api/search — search a value across all text columns in the database
+      // Returns up to LIMIT_PER_TABLE matches per table so this stays fast.
+      if (req.method === "POST" && url.pathname === "/api/search") {
+        const body = (await req.json()) as { connectionId?: string; connection?: ConnectionPayload; term: string; maxPerTable?: number };
+        if (!body.term?.trim()) return respond({ ok: false, error: "Search term required" });
+        const connection = resolveConnection(body);
+        const db = getKnex(connection);
+        const maxPerTable = Math.min(body.maxPerTable ?? 5, 20);
+        const term = body.term.trim();
+
+        const schemas = await listSchemas(connection);
+        const results: { schema: string; table: string; column: string; rows: Record<string, unknown>[] }[] = [];
+
+        for (const schema of schemas) {
+          const tables = await listTables(connection, schema);
+          for (const t of tables) {
+            if (t.type !== "table") continue;
+            const cols = await listColumns(connection, t.name, schema);
+            if (!cols.length) continue;
+
+            // Build a WHERE clause searching all columns cast to text
+            let whereClause: string;
+            let searchQuery: string;
+
+            if (connection.type === "pg") {
+              const conditions = cols.map(c => `"${c.name}"::text ILIKE $1`).join(" OR ");
+              searchQuery = `SELECT * FROM "${schema}"."${t.name}" WHERE ${conditions} LIMIT ${maxPerTable}`;
+              try {
+                const res = await (db as any).raw(searchQuery, [`%${term}%`]);
+                const rows = res?.[0]?.rows ?? res?.rows ?? [];
+                if (rows.length > 0) {
+                  // Find which columns contain the match
+                  const matchingCols = cols
+                    .filter(c => rows.some((r: any) => String(r[c.name] ?? "").toLowerCase().includes(term.toLowerCase())))
+                    .map(c => c.name);
+                  results.push({ schema, table: t.name, column: matchingCols.join(", "), rows: rows.slice(0, maxPerTable) });
+                }
+              } catch { /* skip tables that can't be searched */ }
+
+            } else if (connection.type === "mysql") {
+              const conditions = cols.map(c => `CAST(\`${c.name}\` AS CHAR) LIKE ?`).join(" OR ");
+              searchQuery = `SELECT * FROM \`${schema}\`.\`${t.name}\` WHERE ${conditions} LIMIT ${maxPerTable}`;
+              const bindings = cols.map(() => `%${term}%`);
+              try {
+                const res = await db.raw(searchQuery, bindings);
+                const rows = Array.isArray(res) ? res[0] : res;
+                const rowArr = Array.isArray(rows) ? rows : [];
+                if (rowArr.length > 0) {
+                  const matchingCols = cols
+                    .filter(c => rowArr.some((r: any) => String(r[c.name] ?? "").toLowerCase().includes(term.toLowerCase())))
+                    .map(c => c.name);
+                  results.push({ schema, table: t.name, column: matchingCols.join(", "), rows: rowArr.slice(0, maxPerTable) });
+                }
+              } catch { /* skip */ }
+
+            } else if (connection.type === "sqlite") {
+              const conditions = cols.map(c => `CAST("${c.name}" AS TEXT) LIKE ?`).join(" OR ");
+              searchQuery = `SELECT * FROM "${t.name}" WHERE ${conditions} LIMIT ${maxPerTable}`;
+              const bindings = cols.map(() => `%${term}%`);
+              try {
+                const res = await db.raw(searchQuery, bindings);
+                const rowArr = Array.isArray(res) ? res : [];
+                if (rowArr.length > 0) {
+                  const matchingCols = cols
+                    .filter(c => rowArr.some((r: any) => String(r[c.name] ?? "").toLowerCase().includes(term.toLowerCase())))
+                    .map(c => c.name);
+                  results.push({ schema, table: t.name, column: matchingCols.join(", "), rows: rowArr.slice(0, maxPerTable) });
+                }
+              } catch { /* skip */ }
+
+            } else if (connection.type === "mssql") {
+              const conditions = cols.map(c => `CAST([${c.name}] AS NVARCHAR(MAX)) LIKE ?`).join(" OR ");
+              searchQuery = `SELECT TOP ${maxPerTable} * FROM [${schema}].[${t.name}] WHERE ${conditions}`;
+              const bindings = cols.map(() => `%${term}%`);
+              try {
+                const res = await db.raw(searchQuery, bindings);
+                const rows = res?.recordset ?? [];
+                if (rows.length > 0) {
+                  const matchingCols = cols
+                    .filter(c => rows.some((r: any) => String(r[c.name] ?? "").toLowerCase().includes(term.toLowerCase())))
+                    .map(c => c.name);
+                  results.push({ schema, table: t.name, column: matchingCols.join(", "), rows: rows.slice(0, maxPerTable) });
+                }
+              } catch { /* skip */ }
+            }
+          }
+        }
+
+        return respond({ ok: true, results, term });
+      }
+
+      // POST /api/explain — run EXPLAIN (ANALYZE) and return plan nodes
+      if (req.method === "POST" && url.pathname === "/api/explain") {
+        const body = (await req.json()) as { connectionId?: string; connection?: ConnectionPayload; query: string };
+        if (!body.query?.trim()) return respond({ ok: false, error: "Query required" });
+        const connection = resolveConnection(body);
+        const db = getKnex(connection);
+        const q = body.query.trim();
+
+        try {
+          let plan: any = null;
+          if (connection.type === "pg") {
+            const explainSql = `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${q}`;
+            const res = await (db as any).raw(explainSql);
+            const rows = res?.[0]?.rows ?? res?.rows ?? (Array.isArray(res) ? res : []);
+            plan = rows[0]?.["QUERY PLAN"]?.[0] ?? rows[0] ?? null;
+          } else if (connection.type === "mysql") {
+            const explainSql = `EXPLAIN FORMAT=JSON ${q}`;
+            const res = await db.raw(explainSql);
+            const rows = Array.isArray(res) ? res[0] : res;
+            const rowArr = Array.isArray(rows) ? rows : [];
+            const raw = rowArr[0]?.["EXPLAIN"] ?? rowArr[0]?.EXPLAIN ?? null;
+            plan = typeof raw === "string" ? JSON.parse(raw) : raw;
+          } else if (connection.type === "sqlite") {
+            const explainSql = `EXPLAIN QUERY PLAN ${q}`;
+            const res = await db.raw(explainSql);
+            const rows = Array.isArray(res) ? res : [];
+            plan = { type: "sqlite-qp", nodes: rows };
+          } else if (connection.type === "mssql") {
+            await db.raw("SET SHOWPLAN_ALL ON");
+            const res = await db.raw(q);
+            await db.raw("SET SHOWPLAN_ALL OFF");
+            plan = { type: "mssql-showplan", rows: res?.recordset ?? [] };
+          }
+          return respond({ ok: true, plan, dbType: connection.type });
+        } catch (err: any) {
+          return respond({ ok: false, error: err.message ?? String(err) });
+        }
+      }
+
       // POST /api/schema-snapshot
       if (req.method === "POST" && url.pathname === "/api/schema-snapshot") {
         const body = (await req.json()) as { connectionId?: string; connection?: ConnectionPayload };
@@ -1235,9 +1378,11 @@ Bun.serve({
           targetConnectionId?: string; target?: ConnectionPayload;
           sourceSchema?: string;
           targetSchema?: string;
+          sourceDatabase?: string;
+          targetDatabase?: string;
         };
-        const source = resolveConnection({ connectionId: body.sourceConnectionId, connection: body.source });
-        const target = resolveConnection({ connectionId: body.targetConnectionId, connection: body.target });
+        const source = resolveConnection({ connectionId: body.sourceConnectionId, connection: body.source, databaseOverride: body.sourceDatabase });
+        const target = resolveConnection({ connectionId: body.targetConnectionId, connection: body.target, databaseOverride: body.targetDatabase });
         const [srcSnap, tgtSnap] = await Promise.all([
           snapshotSchema(source, body.sourceSchema),
           snapshotSchema(target, body.targetSchema),
@@ -1510,6 +1655,7 @@ Bun.serve({
           ssl: r.ssl === 1,
           sslRejectUnauthorized: r.ssl_reject_unauthorized !== 0,
           status: (r.status ?? "disconnected") as "connected" | "disconnected",
+          color: r.color ?? undefined,
         }));
         return respond({ ok: true, connections });
       }
@@ -1520,10 +1666,10 @@ Bun.serve({
         if (!conn.id) conn.id = `conn-${Date.now()}`;
         const encPw = conn.password ? encryptPassword(conn.password) : null;
         appDb.run(
-          `INSERT OR REPLACE INTO connections (id, name, type, host, port, database_name, username, password, filename, ssl, ssl_reject_unauthorized, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT OR REPLACE INTO connections (id, name, type, host, port, database_name, username, password, filename, ssl, ssl_reject_unauthorized, status, color)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [conn.id, conn.name, conn.type, conn.host ?? null, conn.port ?? null, conn.database,
-           conn.user ?? null, encPw, conn.filename ?? null, conn.ssl ? 1 : 0, conn.sslRejectUnauthorized !== false ? 1 : 0, "disconnected"],
+           conn.user ?? null, encPw, conn.filename ?? null, conn.ssl ? 1 : 0, conn.sslRejectUnauthorized !== false ? 1 : 0, "disconnected", conn.color ?? null],
         );
         return respond({ ok: true, id: conn.id });
       }
@@ -1539,10 +1685,10 @@ Bun.serve({
           ? encryptPassword(conn.password)
           : (existing?.password ?? null);
         appDb.run(
-          `UPDATE connections SET name=?, type=?, host=?, port=?, database_name=?, username=?, password=?, filename=?, ssl=?, ssl_reject_unauthorized=?
+          `UPDATE connections SET name=?, type=?, host=?, port=?, database_name=?, username=?, password=?, filename=?, ssl=?, ssl_reject_unauthorized=?, color=?
            WHERE id=?`,
           [conn.name, conn.type, conn.host ?? null, conn.port ?? null, conn.database,
-           conn.user ?? null, encPw, conn.filename ?? null, conn.ssl ? 1 : 0, conn.sslRejectUnauthorized !== false ? 1 : 0, id],
+           conn.user ?? null, encPw, conn.filename ?? null, conn.ssl ? 1 : 0, conn.sslRejectUnauthorized !== false ? 1 : 0, conn.color ?? null, id],
         );
         return respond({ ok: true });
       }
@@ -1654,6 +1800,41 @@ Bun.serve({
       if (req.method === "DELETE" && url.pathname.startsWith("/api/app/api-requests/")) {
         const id = url.pathname.slice("/api/app/api-requests/".length);
         appDb.run("DELETE FROM api_requests WHERE id = ?", [id]);
+        return respond({ ok: true });
+      }
+
+      // ─── Saved Queries ──────────────────────────────────────────────────────
+
+      // GET /api/app/saved-queries
+      if (req.method === "GET" && url.pathname === "/api/app/saved-queries") {
+        const rows = appDb.prepare("SELECT * FROM saved_queries ORDER BY saved_at DESC").all() as any[];
+        const queries = rows.map((r: any) => ({
+          id: r.id, name: r.name, description: r.description ?? "",
+          sql: r.sql, tags: JSON.parse(r.tags ?? "[]"),
+          connectionType: r.connection_type ?? "", savedAt: r.saved_at,
+        }));
+        return respond({ ok: true, queries });
+      }
+
+      // POST /api/app/saved-queries — upsert
+      if (req.method === "POST" && url.pathname === "/api/app/saved-queries") {
+        const entry = (await req.json()) as any;
+        if (!entry.id) entry.id = `sq-${Date.now()}`;
+        if (!entry.savedAt) entry.savedAt = new Date().toISOString();
+        appDb.run(
+          `INSERT OR REPLACE INTO saved_queries (id, name, description, sql, tags, connection_type, saved_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [entry.id, entry.name ?? "Untitled", entry.description ?? "",
+           entry.sql ?? "", JSON.stringify(entry.tags ?? []),
+           entry.connectionType ?? "", entry.savedAt],
+        );
+        return respond({ ok: true, id: entry.id });
+      }
+
+      // DELETE /api/app/saved-queries/:id
+      if (req.method === "DELETE" && url.pathname.startsWith("/api/app/saved-queries/")) {
+        const id = url.pathname.slice("/api/app/saved-queries/".length);
+        appDb.run("DELETE FROM saved_queries WHERE id = ?", [id]);
         return respond({ ok: true });
       }
 

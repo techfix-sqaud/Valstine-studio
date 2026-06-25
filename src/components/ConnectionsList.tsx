@@ -130,14 +130,21 @@ export function ConnectionsList() {
                 activeConnectionId === conn.id && "bg-accent",
               )}
             >
-              <Database
-                className={cn(
-                  "w-4 h-4 shrink-0",
-                  conn.status === "connected"
-                    ? "text-success"
-                    : "text-muted-foreground",
-                )}
-              />
+              {conn.color ? (
+                <span
+                  className="w-3 h-3 rounded-full shrink-0 inline-block ring-1 ring-black/10"
+                  style={{ backgroundColor: conn.color }}
+                />
+              ) : (
+                <Database
+                  className={cn(
+                    "w-4 h-4 shrink-0",
+                    conn.status === "connected"
+                      ? "text-success"
+                      : "text-muted-foreground",
+                  )}
+                />
+              )}
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="text-foreground font-medium truncate">

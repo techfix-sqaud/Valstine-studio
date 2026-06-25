@@ -7,9 +7,75 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronRight,
+  AlertTriangle,
+  Trash2,
+  Lock,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+/* ── Migration risk analysis ── */
+type RiskLevel = "critical" | "warn" | "info";
+type RiskTag = { level: RiskLevel; label: string; detail: string; icon: React.ElementType };
+
+function analyzeDiffRisk(d: SchemaDiffEntry): RiskTag[] {
+  const tags: RiskTag[] = [];
+  const details = d.details ?? "";
+  const col = d.column ?? "";
+
+  if (d.type === "table_removed") {
+    tags.push({ level: "critical", label: "Data Loss", detail: "Dropping a table permanently destroys all its data.", icon: Trash2 });
+    tags.push({ level: "warn", label: "Lock Risk", detail: "DROP TABLE acquires an ACCESS EXCLUSIVE lock, blocking all reads and writes.", icon: Lock });
+  }
+  if (d.type === "column_removed") {
+    tags.push({ level: "critical", label: "Data Loss", detail: `Column "${col}" will be permanently deleted.`, icon: Trash2 });
+    tags.push({ level: "warn", label: "Lock Risk", detail: "ALTER TABLE DROP COLUMN rewrites the table, causing a full table lock.", icon: Lock });
+  }
+  if (d.type === "column_added") {
+    // NOT NULL without DEFAULT is dangerous on large tables
+    if (/not null/i.test(details) && !/default/i.test(details)) {
+      tags.push({ level: "critical", label: "Lock Risk", detail: "Adding NOT NULL without DEFAULT rewrites every row — full table lock.", icon: Lock });
+    } else if (/not null/i.test(details)) {
+      tags.push({ level: "info", label: "Backfill Needed", detail: "NOT NULL column with DEFAULT — existing rows will be backfilled.", icon: Clock });
+    }
+  }
+  if (d.type === "column_changed") {
+    // Type change
+    if (/type/i.test(details)) {
+      tags.push({ level: "warn", label: "Type Change", detail: "Changing column type may fail if existing data can't be cast.", icon: AlertTriangle });
+      tags.push({ level: "warn", label: "Lock Risk", detail: "Column type change rewrites the table and acquires an exclusive lock.", icon: Lock });
+    }
+    // Removed nullable
+    if (/nullable.*false|not null added/i.test(details)) {
+      tags.push({ level: "warn", label: "Lock Risk", detail: "Adding NOT NULL constraint rewrites all rows.", icon: Lock });
+    }
+  }
+  if (d.type === "table_added") {
+    tags.push({ level: "info", label: "Safe", detail: "New table creation has no risk to existing data.", icon: Clock });
+  }
+
+  return tags;
+}
+
+const RISK_STYLES: Record<RiskLevel, string> = {
+  critical: "bg-destructive/15 text-destructive border-destructive/30",
+  warn: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
+  info: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+};
+
+function RiskBadge({ tag }: { tag: RiskTag }) {
+  const Icon = tag.icon;
+  return (
+    <span
+      title={tag.detail}
+      className={cn("inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded border cursor-help", RISK_STYLES[tag.level])}
+    >
+      <Icon className="w-2.5 h-2.5" />
+      {tag.label}
+    </span>
+  );
+}
 
 /* ── helpers to build side-by-side diff lines ── */
 
@@ -362,7 +428,7 @@ function ChangeSummary({ diffs }: { diffs: SchemaDiffEntry[] }) {
         </div>
       </button>
       {open && (
-        <div className="px-4 pb-2 flex flex-wrap gap-1.5">
+        <div className="px-4 pb-2 space-y-1">
           {diffs.map((d, i) => {
             const color =
               d.type === "table_added" || d.type === "column_added"
@@ -370,14 +436,15 @@ function ChangeSummary({ diffs }: { diffs: SchemaDiffEntry[] }) {
                 : d.type === "table_removed" || d.type === "column_removed"
                   ? "bg-red-500/15 text-red-400 border-red-500/30"
                   : "bg-blue-500/15 text-blue-400 border-blue-500/30";
+            const risks = analyzeDiffRisk(d).filter(r => r.level !== "info");
             return (
-              <span
-                key={i}
-                className={cn("text-[11px] px-2 py-0.5 rounded border", color)}
-              >
-                {d.schema}.{d.table}
-                {d.column ? `.${d.column}` : ""}
-              </span>
+              <div key={i} className="flex items-center gap-1.5 flex-wrap">
+                <span className={cn("text-[11px] px-2 py-0.5 rounded border", color)}>
+                  {d.schema}.{d.table}
+                  {d.column ? `.${d.column}` : ""}
+                </span>
+                {risks.map((r, ri) => <RiskBadge key={ri} tag={r} />)}
+              </div>
             );
           })}
         </div>
@@ -475,6 +542,33 @@ export default function SchemaDiffView({ data }: { data: SchemaDiffData }) {
           </>
         )}
       </div>
+
+      {/* Risk summary banner */}
+      {(() => {
+        const allRisks = data.diffs.flatMap(d => analyzeDiffRisk(d));
+        const hasCritical = allRisks.some(r => r.level === "critical");
+        const hasWarn = allRisks.some(r => r.level === "warn");
+        if (!hasCritical && !hasWarn) return null;
+        return (
+          <div className={cn(
+            "flex items-center gap-2 px-4 py-1.5 text-xs border-b",
+            hasCritical
+              ? "bg-destructive/10 border-destructive/30 text-destructive"
+              : "bg-yellow-500/10 border-yellow-500/30 text-yellow-400",
+          )}>
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span className="font-medium">
+              {hasCritical ? "Critical risk detected" : "Migration warnings detected"}
+            </span>
+            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground text-[11px]">
+              {hasCritical
+                ? "This migration contains data-destructive or table-locking operations. Review risk badges before applying."
+                : "Some operations may cause table locks or require backfills. Review risk badges below."}
+            </span>
+          </div>
+        );
+      })()}
 
       {/* Change summary */}
       <ChangeSummary diffs={data.diffs} />
