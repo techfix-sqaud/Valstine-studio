@@ -15,6 +15,7 @@ import {
   X,
   BarChart2,
   Braces,
+  Edit3,
 } from "lucide-react";
 import {
   BarChart,
@@ -33,6 +34,7 @@ import { useAppStore } from "@/store/app-store";
 import { QueryHistory } from "./QueryHistory";
 import { showContextMenu } from "./ContextMenu";
 import TerminalComponent from "./Terminal";
+import { EditableResultGrid } from "./EditableResultGrid";
 
 // ── Column stats helper ────────────────────────────────────────────────────────
 function computeColumnStats(rows: Record<string, unknown>[], col: string) {
@@ -48,6 +50,9 @@ function computeColumnStats(rows: Record<string, unknown>[], col: string) {
 // ── JSON cell detector ────────────────────────────────────────────────────────
 function tryParseJson(val: unknown): object | null {
   if (val === null || val === undefined) return null;
+  // Date objects must not be treated as JSON — they come through Electron IPC
+  // as real Date instances (structured clone) but web serializes them to strings.
+  if (val instanceof Date) return null;
   if (typeof val === "object" && !Array.isArray(val)) return val as object;
   // JSON arrays
   if (typeof val === "string" && val.startsWith("{")) {
@@ -311,6 +316,7 @@ function ResultsTable() {
   const [copied, setCopied] = useState(false);
   const [rowFilter, setRowFilter] = useState("");
   const [jsonPopover, setJsonPopover] = useState<object | null>(null);
+  const [editGridMode, setEditGridMode] = useState(false);
 
   // Resizable columns
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
@@ -516,6 +522,18 @@ function ResultsTable() {
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={() => setEditGridMode((v) => !v)}
+            title={editGridMode ? "Exit edit mode" : "Edit results — double-click a cell to modify"}
+            className={cn(
+              "p-1 rounded transition-colors",
+              editGridMode
+                ? "bg-primary/15 text-primary"
+                : "hover:bg-secondary text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+          </button>
           <button onClick={handleCopy} className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors" title="Copy as TSV">
             {copied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
@@ -525,8 +543,17 @@ function ResultsTable() {
         </div>
       </div>
 
-      {/* Scrollable table */}
-      <div className="flex-1 overflow-auto min-h-0">
+      {/* Editable grid — swaps in when edit mode is active */}
+      {editGridMode && (
+        <EditableResultGrid
+          columns={queryResult.columns}
+          rows={filteredRows}
+          onExitEdit={() => setEditGridMode(false)}
+        />
+      )}
+
+      {/* Scrollable table — read-only view */}
+      {!editGridMode && (<div className="flex-1 overflow-auto min-h-0">
         <table className="text-xs font-mono min-w-full border-separate border-spacing-0">
           <thead className="sticky top-0 z-10 bg-panel-bg">
             <tr>
@@ -592,6 +619,8 @@ function ResultsTable() {
                             {Array.isArray(parsed) ? `Array[${(parsed as unknown[]).length}]` : `Object{${Object.keys(parsed).length}}`}
                           </span>
                         </button>
+                      ) : val instanceof Date ? (
+                        <span className="text-blue-300">{val.toISOString().replace("T", " ").replace(/\.000Z$/, " UTC")}</span>
                       ) : typeof val === "boolean" ? (
                         <span className={cn(val ? "text-success" : "text-destructive")}>{String(val)}</span>
                       ) : (
@@ -605,8 +634,9 @@ function ResultsTable() {
           </tbody>
         </table>
       </div>
+      )}
 
-      {jsonPopover && <JsonCellPopover data={jsonPopover} onClose={() => setJsonPopover(null)} />}
+      {jsonPopover && !editGridMode && <JsonCellPopover data={jsonPopover} onClose={() => setJsonPopover(null)} />}
     </div>
   );
 }
@@ -685,13 +715,15 @@ function MultiQueryNav() {
   );
 }
 
+const isElectron = typeof window !== "undefined" && !!(window as any).electronAPI?.isElectron;
+
 export function ResultsPanel() {
   const { activeBottomTab, setActiveBottomTab, bottomPanelVisible, setBottomPanelVisible } = useAppStore();
 
   const tabs = [
     { id: "results" as const, label: "Results", icon: Table },
     { id: "chart" as const, label: "Chart", icon: BarChart2 },
-    { id: "terminal" as const, label: "Terminal", icon: Terminal },
+    ...(isElectron ? [{ id: "terminal" as const, label: "Terminal", icon: Terminal }] : []),
     { id: "problems" as const, label: "Problems", icon: AlertTriangle },
     { id: "history" as const, label: "History", icon: Clock },
   ];

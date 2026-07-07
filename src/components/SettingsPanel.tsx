@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { useAppStore, type AccountAuthProvider } from "@/store/app-store";
 import { TERMINAL_PRESETS, getPresetById } from "@/lib/terminal-themes";
 import { getSourceControlProviderLabel } from "@/lib/source-control";
+import { AI_AGENT_URL } from "@/Helpers/apis";
 
 type Section =
   | "general"
@@ -549,7 +550,7 @@ function AISection() {
           Agent Endpoint
         </h3>
         <div className="font-mono text-[11px] text-muted-foreground bg-secondary/30 rounded px-2.5 py-2 break-all">
-          https://a3wb4h5l3ao4rvv6yle57zjj.agents.do-ai.run
+          {AI_AGENT_URL}
         </div>
         <p className="text-[10px] text-muted-foreground mt-1.5">
           Requests are proxied server-side. The agent receives your SQL context

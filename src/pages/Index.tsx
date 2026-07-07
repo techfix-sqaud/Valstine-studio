@@ -19,9 +19,15 @@ import { ProvisionDialog } from "@/components/ProvisionDialog";
 import { ContextMenuProvider } from "@/components/ContextMenu";
 import { VariablesModal } from "@/components/VariablesModal";
 import { DestructiveQueryGuard } from "@/components/DestructiveQueryGuard";
+import { ImpactAnalysisModal } from "@/components/ImpactAnalysisModal";
+import { SqlOptimizerModal } from "@/components/SqlOptimizerModal";
+import { SqlRecycleBinPanel } from "@/components/SqlRecycleBinPanel";
 import { useAppStore } from "@/store/app-store";
 import { useEffect } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useSessionPersistence } from "@/hooks/use-session-persistence";
+import { useSchemaCache } from "@/hooks/use-schema-cache";
+import { buildSchemaContextBlock } from "@/lib/ai-context";
 
 const isElectronApp =
   typeof window !== "undefined" && (window as any).electronAPI?.isElectron;
@@ -40,9 +46,26 @@ const Index = () => {
     pendingVariables,
     closeVariablesModal,
     runQueryWithVariables,
+    impactAnalysisOpen,
+    impactReport,
+    closeImpactAnalysis,
+    proceedAfterImpact,
+    sqlOptimizerOpen,
+    sqlOptimizerResult,
+    closeSqlOptimizer,
+    proceedAfterOptimizer,
+    connections,
+    activeConnectionId,
+    setSchemaContextCache,
   } = useAppStore();
+
+  const { cache } = useSchemaCache();
+  const activeConn = connections.find((c) => c.id === activeConnectionId);
   const isMobile = useIsMobile();
   const sidebarPanelRef = usePanelRef();
+
+  // Syncs tab content + workspace state to IndexedDB per-keystroke (debounced)
+  useSessionPersistence();
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const isDashboardTab = activeTab?.type === "dashboard";
@@ -58,6 +81,11 @@ const Index = () => {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
+
+  // Keep the schema context string in the store so executeQuery can pass it to the SQL Optimizer.
+  useEffect(() => {
+    setSchemaContextCache(buildSchemaContextBlock(cache, activeConn));
+  }, [cache, activeConn]);
 
   // Cmd+Enter is handled inside the Monaco editor via addCommand (see QueryEditor.tsx),
   // so it correctly runs only the selected text when a selection exists.
@@ -243,6 +271,21 @@ const Index = () => {
           onClose={closeVariablesModal}
         />
         <DestructiveQueryGuard />
+        {impactAnalysisOpen && impactReport && (
+          <ImpactAnalysisModal
+            report={impactReport}
+            onProceed={proceedAfterImpact}
+            onCancel={closeImpactAnalysis}
+          />
+        )}
+        {sqlOptimizerOpen && sqlOptimizerResult && (
+          <SqlOptimizerModal
+            result={sqlOptimizerResult}
+            onProceed={proceedAfterOptimizer}
+            onCancel={closeSqlOptimizer}
+          />
+        )}
+        <SqlRecycleBinPanel />
       </div>
     </ContextMenuProvider>
   );
