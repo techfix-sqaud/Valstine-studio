@@ -143,6 +143,16 @@ const CK = {
   Value: 13 as Monaco.languages.CompletionItemKind,   // Value (used for databases)
 } as const;
 
+// PostgreSQL folds unquoted identifiers to lowercase. Any name that contains
+// an uppercase letter, starts with a digit, or contains non-word characters
+// must be double-quoted to survive the round-trip.
+function quoteIdent(name: string): string {
+  if (/[A-Z]/.test(name) || /^\d/.test(name) || /[^a-z0-9_]/.test(name)) {
+    return `"${name.replace(/"/g, '""')}"`;
+  }
+  return name;
+}
+
 function keywordItems(
   range: Monaco.IRange,
 ): Monaco.languages.CompletionItem[] {
@@ -168,7 +178,7 @@ function tableItems(
   return filtered.map((t) => ({
     label: { label: t.name, description: t.schema },
     kind: CK.Class,
-    insertText: t.name,
+    insertText: quoteIdent(t.name),
     detail: `${t.schema} · table`,
     documentation: t.fullName,
     range,
@@ -184,7 +194,7 @@ function columnItems(
   return columns.map((c) => ({
     label: c.name,
     kind: CK.Field,
-    insertText: c.name,
+    insertText: quoteIdent(c.name),
     detail: `${c.type}${c.primaryKey ? " 🔑" : ""}${c.nullable ? "" : " NOT NULL"}`,
     documentation: `${tableName}.${c.name} (${c.type})`,
     range,

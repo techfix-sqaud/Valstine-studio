@@ -8,7 +8,9 @@ permissions:
   contents: write
 
 jobs:
-  # ── 1. Generate a dev version (auto patch + dev suffix) ───────────────
+  # ── 1. Generate version: v{major}.{minor}.{next-patch}-dev.{run} ─────────────
+  # Patch is derived from the highest existing stable tag for this major.minor,
+  # so the dev build always shows the version it will become once merged to main.
   version:
     runs-on: ubuntu-latest
     outputs:
@@ -22,15 +24,20 @@ jobs:
       - name: Calculate dev version
         id: meta
         run: |
-          BASE=$(node -p "require('./package.json').version" | awk -F. '{print $1"."$2}')
-          DEV_VERSION="${BASE}.0-dev.${{ github.run_number }}"
+          # major.minor from package.json
+          BASE=$(node -p "require('./package.json').version" | grep -oP '^\d+\.\d+')
+
+          # Next patch = number of existing stable tags for this series + 1
+          ESCAPED=$(echo "$BASE" | sed 's/\./\\./g')
+          STABLE_COUNT=$(git tag --list "v${BASE}.*" | grep -vE '\-dev' | wc -l | tr -d ' ')
+          NEXT_PATCH=$((STABLE_COUNT))
+
+          DEV_VERSION="${BASE}.${NEXT_PATCH}-dev.${{ github.run_number }}"
           echo "version=${DEV_VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${DEV_VERSION}" >> "$GITHUB_OUTPUT"
           echo "Releasing: v${DEV_VERSION}"
 
-  # ── 2. Build and upload (all platforms in parallel) ───────────────────
-  # electron-builder --publish always creates the draft release on first run;
-  # the other two platform jobs find it and upload their assets to it.
+  # ── 2. Build all platforms in parallel ────────────────────────────────────────
   build:
     needs: [version]
     strategy:
@@ -80,10 +87,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 3. Publish (un-draft) the pre-release ─────────────────────────────
-  # electron-builder --publish always creates draft release(s); we just un-draft here.
-  # Using gh CLI avoids the "already_exists" conflict that action-gh-release hits when
-  # multiple parallel build jobs each create a draft for the same tag.
+  # ── 3. Un-draft and mark as pre-release ────────────────────────────────────────
   publish:
     needs: [version, build]
     runs-on: ubuntu-latest
@@ -100,7 +104,7 @@ jobs:
             --title "Valstine Studio ${{ needs.version.outputs.tag }}" \
             --notes "## Valstine Studio ${{ needs.version.outputs.tag }} — Development Build
 
-          > ⚠️ **Pre-release** — built from \`dev\` branch. Not recommended for production use.
+          > ⚠️ **Pre-release** — built from \`dev\` branch. Not for production use.
 
           **Commit:** \`${{ github.sha }}\`
           **Run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})

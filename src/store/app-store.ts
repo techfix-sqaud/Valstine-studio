@@ -5,6 +5,10 @@ import { DEFAULT_PRESET_ID, DEFAULT_TERMINAL_FONT, DEFAULT_TERMINAL_FONT_SIZE, g
 import type { SourceControlProvider, SourceControlSettings } from '@/lib/source-control';
 import { extractVariables, substituteVariables } from '@/lib/query-variables';
 import { detectDestructiveOperation, type DestructiveOp } from '@/lib/query-safety';
+import { restoreSessionFromIDB } from '@/hooks/use-session-persistence';
+import { analyzeImpact, type ImpactReport } from '@/lib/impact-analysis';
+import { callSqlOptimizer, isLikelyDestructive, type SqlOptimizerResult, type RecycleBinEntry } from '@/lib/sql-optimizer';
+import { sendAiChat } from '@/Actions/AIActions';
 
 // Check every semicolon-separated statement, not just the first
 function detectAnyDestructive(sql: string): DestructiveOp | null {
@@ -225,7 +229,7 @@ interface AppState {
   openApiGeneratorTab: () => void;
   openApiTesterTab: () => void;
   openAiSidebar: () => void;
-  sendAiMessage: (prompt: string) => void;
+  sendAiMessage: (prompt: string, schemaContext?: string) => void;
   clearAiMessages: () => void;
   setSidebarOpen: (open: boolean) => void;
 
@@ -249,6 +253,33 @@ interface AppState {
 
   openProvisionDialog: () => void;
   closeProvisionDialog: () => void;
+
+  // Pre-flight impact analysis
+  impactAnalysisOpen: boolean;
+  impactReport: ImpactReport | null;
+  impactPendingQuery: string;
+  openImpactAnalysis: (report: ImpactReport, query: string) => void;
+  closeImpactAnalysis: () => void;
+  proceedAfterImpact: () => Promise<void>;
+
+  // SQL Optimizer (AI-powered pre-execution analysis)
+  sqlOptimizerOpen: boolean;
+  sqlOptimizerResult: SqlOptimizerResult | null;
+  sqlOptimizerPendingQuery: string;
+  openSqlOptimizer: (result: SqlOptimizerResult, query: string) => void;
+  closeSqlOptimizer: () => void;
+  proceedAfterOptimizer: () => Promise<void>;
+
+  // Recycle bin — logs destructive operations processed by the optimizer
+  recycleBin: RecycleBinEntry[];
+  recycleBinOpen: boolean;
+  setRecycleBinOpen: (open: boolean) => void;
+  addRecycleBinEntry: (entry: RecycleBinEntry) => void;
+  clearRecycleBin: () => void;
+
+  // Cached schema context string — updated by components via useSchemaCache()
+  schemaContextCache: string;
+  setSchemaContextCache: (ctx: string) => void;
 
   // Loads connections, settings, and history from server SQLite on app start
   initApp: () => Promise<void>;
@@ -334,6 +365,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   safetyGuardPending: '',
   safetyGuardRowCount: null,
   safetyGuardCountLoading: false,
+  impactAnalysisOpen: false,
+  impactReport: null,
+  impactPendingQuery: '',
+  sqlOptimizerOpen: false,
+  sqlOptimizerResult: null,
+  sqlOptimizerPendingQuery: '',
+  recycleBin: [],
+  recycleBinOpen: false,
+  schemaContextCache: '',
   dryRunMode: false,
   dryRunExecuted: false,
   toggleDryRun: () => set(s => ({ dryRunMode: !s.dryRunMode })),
@@ -450,6 +490,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (conn.isProduction) {
       const op = detectAnyDestructive(queryText);
       if (op) { get().openSafetyGuard(op, queryText); return; }
+    }
+
+    // SQL Optimizer: AI-powered pre-execution analysis (only when token is set + query is destructive)
+    const { doAiToken, schemaContextCache } = get();
+    if (doAiToken && isLikelyDestructive(queryText)) {
+      const optimizerResult = await callSqlOptimizer(queryText, conn.type, schemaContextCache);
+      if (optimizerResult) {
+        get().openSqlOptimizer(optimizerResult, optimizerResult.execution_query);
+        return;
+      }
+    }
+
+    // Pre-flight impact analysis — always runs as a safety net.
+    // If the AI optimizer ran and succeeded it already returned above; this catches
+    // the cases where there's no token, the optimizer returned null, or the query
+    // isn't flagged as destructive by the optimizer's heuristic but IS a DDL op.
+    const impactReport = analyzeImpact(queryText, get().queryHistory);
+    if (impactReport) {
+      get().openImpactAnalysis(impactReport, queryText);
+      return;
     }
 
     // Dry-run: wrap in a transaction that rolls back automatically
@@ -684,7 +744,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     return { tabs: [...s.tabs, tab], activeTabId: tab.id };
   }),
   openAiSidebar: () => set({ activeSidebarTab: 'ai', sidebarOpen: true }),
-  sendAiMessage: async (prompt) => {
+  sendAiMessage: async (prompt, schemaContext) => {
     const trimmedPrompt = prompt.trim();
     if (!trimmedPrompt) return;
 
@@ -702,16 +762,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     const updatedMessages = [...state.aiMessages, userMsg];
     set({ activeSidebarTab: 'ai', sidebarOpen: true, aiThinking: true, aiMessages: updatedMessages });
 
-    // Build context prefix to inject into the user message (DO agent disallows system role)
+    // Build context prefix — schema-aware RAG context takes priority when provided
+    // by the component; fall back to a lighter connection+SQL summary otherwise.
     const contextParts: string[] = [];
-    if (activeConn) {
-      contextParts.push(`[Context: ${activeConn.name} (${activeConn.type.toUpperCase()}, db: ${activeConn.database}${activeConn.host ? `, host: ${activeConn.host}` : ''})]`);
-    }
-    if (activeTab?.content?.trim()) {
-      contextParts.push(`[Active SQL:\n\`\`\`sql\n${activeTab.content.trim().slice(0, 600)}\n\`\`\`]`);
+    if (schemaContext) {
+      contextParts.push(schemaContext);
+    } else {
+      if (activeConn) {
+        contextParts.push(`[Context: ${activeConn.name} (${activeConn.type.toUpperCase()}, db: ${activeConn.database}${activeConn.host ? `, host: ${activeConn.host}` : ''})]`);
+      }
+      if (activeTab?.content?.trim()) {
+        contextParts.push(`[Active SQL:\n\`\`\`sql\n${activeTab.content.trim().slice(0, 600)}\n\`\`\`]`);
+      }
     }
 
-    // Inject context as a prefix on the first user message of this turn
+    // Inject context as a prefix on the last user message of this turn
     const historyMessages = updatedMessages
       .filter((m) => !m.id.startsWith('ai-welcome'))
       .map((m) => ({ role: m.role, content: m.content }));
@@ -721,7 +786,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (last.role === 'user') {
         historyMessages[historyMessages.length - 1] = {
           ...last,
-          content: `${contextParts.join('\n')}\n\n${last.content}`,
+          content: `${contextParts.join('\n\n')}\n\n${last.content}`,
         };
       }
     }
@@ -729,18 +794,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const apiMessages = historyMessages;
 
     try {
-      // In Electron there is no HTTP server — route through IPC so the main
-      // process can make the outbound fetch with the DO_AI_TOKEN env var.
       let data: { ok: boolean; content?: string; error?: string };
       if (electronAPI?.aiChat) {
         data = await electronAPI.aiChat(apiMessages);
       } else {
-        const res = await fetch('/api/ai-chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: apiMessages }),
-        });
-        data = (await res.json()) as { ok: boolean; content?: string; error?: string };
+        data = await sendAiChat(apiMessages);
       }
       set((s) => ({
         aiThinking: false,
@@ -894,6 +952,52 @@ export const useAppStore = create<AppState>((set, get) => ({
     return { settings: next };
   }),
 
+  openImpactAnalysis: (report, query) =>
+    set({ impactAnalysisOpen: true, impactReport: report, impactPendingQuery: query }),
+  closeImpactAnalysis: () =>
+    set({ impactAnalysisOpen: false, impactReport: null, impactPendingQuery: '' }),
+  proceedAfterImpact: async () => {
+    // Capture before clearing state
+    const { impactReport: report, impactPendingQuery: pending } = get();
+    set({ impactAnalysisOpen: false, impactReport: null, impactPendingQuery: '' });
+    // Use pre-quoted SQL so mixed-case identifiers survive PostgreSQL's case folding.
+    const sqlToRun = report?.quotedSQL ?? pending;
+    if (sqlToRun) await get().runQuery(sqlToRun);
+  },
+
+  openSqlOptimizer: (result, query) =>
+    set({ sqlOptimizerOpen: true, sqlOptimizerResult: result, sqlOptimizerPendingQuery: query }),
+  closeSqlOptimizer: () =>
+    set({ sqlOptimizerOpen: false, sqlOptimizerResult: null, sqlOptimizerPendingQuery: '' }),
+  proceedAfterOptimizer: async () => {
+    const { sqlOptimizerResult: result, sqlOptimizerPendingQuery: pending } = get();
+    // Log to recycle bin before clearing state
+    if (result && result.recycle_bin_action.action_type !== 'NONE') {
+      const { recycle_bin_action } = result;
+      const entry: RecycleBinEntry = {
+        id: `rb-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        action_type: recycle_bin_action.action_type as RecycleBinEntry['action_type'],
+        target_table: recycle_bin_action.target_table,
+        target_column: recycle_bin_action.target_column,
+        original_query: result.original_query,
+        execution_query: pending,
+        undo_sql: recycle_bin_action.undo_sql,
+        engine: result.detected_engine,
+      };
+      get().addRecycleBinEntry(entry);
+    }
+    set({ sqlOptimizerOpen: false, sqlOptimizerResult: null, sqlOptimizerPendingQuery: '' });
+    if (pending) await get().runQuery(pending);
+  },
+
+  setRecycleBinOpen: (open) => set({ recycleBinOpen: open }),
+  addRecycleBinEntry: (entry) =>
+    set((s) => ({ recycleBin: [entry, ...s.recycleBin].slice(0, 100) })),
+  clearRecycleBin: () => set({ recycleBin: [] }),
+
+  setSchemaContextCache: (ctx) => set({ schemaContextCache: ctx }),
+
   openProvisionDialog: () => set({ provisionDialogOpen: true }),
   closeProvisionDialog: () => set({ provisionDialogOpen: false }),
 
@@ -913,12 +1017,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   initApp: async () => {
     try {
-      const [connections, rawSettings, history, githubToken, azureDevOpsToken] = await Promise.all([
+      const [connections, rawSettings, history, githubToken, azureDevOpsToken, savedSession] = await Promise.all([
         api.appGetConnections().catch(() => [] as any[]),
         api.appGetSettings().catch(() => ({} as Record<string, any>)),
         api.appGetHistory().catch(() => [] as any[]),
         loadToken('valstine-github-token').catch(() => ''),
         loadToken('valstine-azure-devops-token').catch(() => ''),
+        restoreSessionFromIDB().catch(() => null),
       ]);
       const appSettings: AppSettings = {
         terminal: { ...defaultTerminalSettings(), ...(rawSettings.terminal ?? {}) },
@@ -941,6 +1046,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Determine the first previously-connected connection to make active
       const prevActive = connections.find((c) => c.status === 'connected');
       const firstId = prevActive?.id ?? connections[0]?.id ?? '';
+
+      // Restore previously open tabs from IndexedDB if available.
+      // Server-fetched connectionIds take precedence over stale saved ones.
+      const validConnIds = new Set(connections.map((c: any) => c.id));
+      const restoredTabs = savedSession?.tabs?.length
+        ? savedSession.tabs.map((t: QueryTab) => ({
+            ...t,
+            connectionId: validConnIds.has(t.connectionId) ? t.connectionId : firstId,
+          }))
+        : null;
+
       set((s) => ({
         connections,
         settings: appSettings,
@@ -950,9 +1066,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         hasCompletedTour,
         githubToken,
         azureDevOpsToken,
-        activeConnectionId: firstId,
-        // Resolve any tabs that still hold the empty/stale default connectionId
-        tabs: s.tabs.map((t) =>
+        activeConnectionId: savedSession?.activeConnectionId && validConnIds.has(savedSession.activeConnectionId)
+          ? savedSession.activeConnectionId
+          : firstId,
+        activeTabId: restoredTabs
+          ? (savedSession?.activeTabId ?? restoredTabs[0]?.id ?? s.activeTabId)
+          : s.activeTabId,
+        activeSidebarTab: savedSession?.activeSidebarTab ?? s.activeSidebarTab,
+        sidebarOpen: savedSession?.sidebarOpen ?? s.sidebarOpen,
+        tabs: restoredTabs ?? s.tabs.map((t) =>
           (!t.connectionId || t.connectionId === 'conn-1') ? { ...t, connectionId: firstId } : t
         ),
       }));

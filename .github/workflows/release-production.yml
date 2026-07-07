@@ -8,7 +8,10 @@ permissions:
   contents: write
 
 jobs:
-  # ── 1. Auto-calculate the next patch version from git tags ─────────────
+  # ── 1. Calculate version: v{major}.{minor}.{patch}-{YYYY}-{MM}-{DD} ─────────
+  # major.minor come from package.json (bump manually for breaking/feature changes).
+  # patch auto-increments by counting existing production tags for this major.minor.
+  # Date suffix is today's UTC date, so every build is uniquely identifiable.
   version:
     runs-on: ubuntu-latest
     outputs:
@@ -20,24 +23,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Calculate next version
+      - name: Calculate version
         id: meta
         run: |
-          # Read major.minor from package.json (you control this for breaking/feature releases)
-          BASE=$(node -p "require('./package.json').version" | awk -F. '{print $1"."$2}')
+          # major.minor controlled manually in package.json
+          BASE=$(node -p "require('./package.json').version" | grep -oP '^\d+\.\d+')
 
-          # Find the highest existing patch for this major.minor series
+          # Count existing stable tags for this major.minor series to derive patch number
           ESCAPED=$(echo "$BASE" | sed 's/\./\\./g')
-          LATEST=$(git tag --sort=-v:refname | grep -E "^v${ESCAPED}\.[0-9]+$" | head -1)
+          # Match tags like v1.0.0-2026-06-23 (stable, no -dev suffix)
+          PATCH=$(git tag --list "v${BASE}.*" | grep -vE '\-dev' | wc -l | tr -d ' ')
 
-          if [ -z "$LATEST" ]; then
-            PATCH=0
-          else
-            PATCH=$(echo "$LATEST" | awk -F. '{print $3}')
-            PATCH=$((PATCH + 1))
-          fi
-
-          VERSION="${BASE}.${PATCH}"
+          DATE=$(date -u +"%Y-%m-%d")
+          VERSION="${BASE}.${PATCH}-${DATE}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Releasing: v${VERSION}"
@@ -45,7 +43,8 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
-          PREV_TAG=$(git tag --sort=-v:refname | grep -vE '\-dev\.' | head -1)
+          # Find the last stable tag (not a dev pre-release)
+          PREV_TAG=$(git tag --sort=-v:refname | grep -vE '\-dev' | head -1)
           if [ -z "$PREV_TAG" ]; then
             RANGE="HEAD"
           else
@@ -79,9 +78,7 @@ jobs:
             echo "CHANGELOG_EOF"
           } >> "$GITHUB_OUTPUT"
 
-  # ── 2. Build and upload to draft release (all platforms in parallel) ───
-  # electron-builder --publish always creates the draft release on first run;
-  # the other two platform jobs find it and upload their assets to it.
+  # ── 2. Build all platforms in parallel ────────────────────────────────────────
   build:
     needs: [version]
     strategy:
@@ -114,7 +111,7 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Stamp auto-calculated version into package.json
+      - name: Stamp version into package.json
         run: |
           node -e "
             const fs = require('fs');
@@ -131,14 +128,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── 3. Publish (un-draft) once all platform builds succeed ────────────
+  # ── 3. Un-draft and publish the stable release ────────────────────────────────
   publish:
     needs: [version, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Publish release
+      - name: Publish stable release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}

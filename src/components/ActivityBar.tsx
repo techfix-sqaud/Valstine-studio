@@ -10,6 +10,7 @@ import {
   GitBranch,
   Braces,
   Send,
+  Trash2,
 } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
 import { cn } from "@/lib/utils";
@@ -44,6 +45,8 @@ export function ActivityBar() {
     openSchemaTab,
     openApiGeneratorTab,
     openApiTesterTab,
+    setRecycleBinOpen,
+    recycleBin,
   } = useAppStore();
 
   const handleClick = (id: SidebarTab) => {
@@ -100,6 +103,20 @@ export function ActivityBar() {
         className="w-10 h-10 flex items-center justify-center rounded-md transition-colors text-muted-foreground hover:text-foreground"
       >
         <Send className="w-5 h-5" />
+      </button>
+
+      {/* Recycle Bin — shows destructive operations logged by the SQL Optimizer */}
+      <button
+        onClick={() => setRecycleBinOpen(true)}
+        title={`Recycle Bin${recycleBin.length > 0 ? ` (${recycleBin.length})` : ''}`}
+        className="w-10 h-10 flex items-center justify-center rounded-md transition-colors text-muted-foreground hover:text-foreground relative"
+      >
+        <Trash2 className="w-5 h-5" />
+        {recycleBin.length > 0 && (
+          <span className="absolute top-1.5 right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-orange-500 text-[8px] font-bold text-white">
+            {recycleBin.length > 9 ? '9+' : recycleBin.length}
+          </span>
+        )}
       </button>
 
       <div className="mt-auto">

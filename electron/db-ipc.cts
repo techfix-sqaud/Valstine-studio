@@ -1563,7 +1563,7 @@ export function registerDbIPC() {
 
   // ── AI chat proxy (Electron can't use fetch to external origins in renderer) ──
   ipcMain.handle('ai:chat', async (_, { messages }: { messages: { role: string; content: string }[] }) => {
-    const agentUrl = 'https://a3wb4h5l3ao4rvv6yle57zjj.agents.do-ai.run/api/v1/chat/completions';
+    const agentUrl = 'https://ww7qywyrdk5e4ofyic2gn3xm.agents.do-ai.run';
     const bearerToken = process.env.DO_AI_TOKEN;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (bearerToken) headers['Authorization'] = `Bearer ${bearerToken}`;

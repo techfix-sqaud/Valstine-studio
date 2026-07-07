@@ -43,10 +43,8 @@ function sensitiveRequestGuard() {
 }
 
 export default defineConfig({
-  // Absolute base so asset paths (/assets/...) resolve correctly from any
-  // route depth in both Electron (valstine://app/) and the web deployment.
-  // './' would break reloads at nested routes (e.g. /studio -> ./assets/... resolves wrong).
   base: '/',
+  envPrefix: ['VITE_', 'DO_AI_'],
   server: {
     host: "::",
     port: 8080,
