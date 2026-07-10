@@ -152,6 +152,7 @@
       "main": "dist-electron/electron/main.cjs"
     },
     "files": [
+      "package.json",
       { "from": "apps/studio/dist", "to": "dist", "filter": ["**/*"] },
       { "from": "apps/studio/dist-electron", "to": "dist-electron", "filter": ["**/*"] },
       "node_modules/**/*",
