@@ -443,12 +443,12 @@ export function EditorToolbar() {
         <span className="hidden sm:inline">{dryRunMode ? "Dry Run ON" : "Dry Run"}</span>
       </button>
 
-      {/* Explain */}
+      {/* Explain — not available for connection types without EXPLAIN support (e.g. Cassandra) */}
       <button
         onClick={handleExplain}
-        disabled={explainLoading || !conn}
+        disabled={explainLoading || !conn || !api.DB_TYPE_CAPABILITIES[conn.type].supportsExplain}
         className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-40 shrink-0"
-        title="Explain query plan"
+        title={conn && !api.DB_TYPE_CAPABILITIES[conn.type].supportsExplain ? "Not supported for this database type" : "Explain query plan"}
       >
         <Zap className={`w-3.5 h-3.5 ${explainLoading ? "animate-pulse text-yellow-400" : ""}`} />
         <span className="hidden sm:inline">Explain</span>
@@ -488,13 +488,14 @@ export function EditorToolbar() {
         <span className="hidden sm:inline">Session</span>
       </button>
 
-      {/* Translate — portal-based popup */}
+      {/* Translate — portal-based popup. DIALECT_OPTIONS only lists SQL dialects,
+          so this is meaningless for non-SQL connections like Cassandra. */}
       <button
         ref={translateBtnRef}
         onClick={() => setTranslateOpen((v) => !v)}
-        disabled={!conn || !activeTab?.content?.trim()}
+        disabled={!conn || !activeTab?.content?.trim() || conn.type === "cassandra"}
         className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-40 shrink-0"
-        title="Translate SQL to another dialect"
+        title={conn?.type === "cassandra" ? "Not applicable for CQL" : "Translate SQL to another dialect"}
       >
         <ArrowLeftRight className="w-3.5 h-3.5" />
         <span className="hidden sm:inline">Translate</span>

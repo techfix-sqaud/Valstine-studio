@@ -30,7 +30,7 @@ function randomName(type: DBType): string {
   return `valstine_${type}_${suffix}`;
 }
 
-const DB_TYPES: DBType[] = ["pg", "mysql", "mssql", "sqlite"];
+const DB_TYPES: DBType[] = ["pg", "mysql", "mssql", "sqlite", "cassandra"];
 
 const DOCKER_INFO: Record<
   Exclude<DBType, "sqlite">,
@@ -50,6 +50,11 @@ const DOCKER_INFO: Record<
     image: "mcr.microsoft.com/mssql/server:2022-latest",
     note: "Requires Docker Desktop · 1.5 GB image",
     defaultUser: "sa",
+  },
+  cassandra: {
+    image: "cassandra:5",
+    note: "Requires Docker Desktop · takes 30-90s to accept connections",
+    defaultUser: "",
   },
 };
 
@@ -113,6 +118,7 @@ export function ProvisionDialog() {
       mysql: { port: 3307, user: "root" },
       mssql: { port: 1434, user: "sa" },
       sqlite: { port: 0, user: "" },
+      cassandra: { port: 9043, user: "" },
     };
     setPort(defaults[t].port);
     setUser(defaults[t].user);
@@ -195,7 +201,7 @@ export function ProvisionDialog() {
             <label className="text-[11px] text-muted-foreground font-medium mb-1.5 block">
               Database Engine
             </label>
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-5 gap-1.5">
               {DB_TYPES.map((t) => {
                 const m = DB_TYPE_META[t];
                 return (
@@ -292,18 +298,26 @@ export function ProvisionDialog() {
                 </div>
               </div>
 
-              <div>
-                <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
-                  Database Name
-                </label>
-                <input
-                  value={database}
-                  onChange={(e) => setDatabase(e.target.value)}
-                  placeholder="mydb"
-                  className={inputBase}
-                />
-              </div>
+              {dbType === "cassandra" ? (
+                <p className="text-[10px] text-muted-foreground">
+                  Cassandra starts with no user keyspaces. Once connected, create
+                  one from the connection's context menu.
+                </p>
+              ) : (
+                <div>
+                  <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
+                    Database Name
+                  </label>
+                  <input
+                    value={database}
+                    onChange={(e) => setDatabase(e.target.value)}
+                    placeholder="mydb"
+                    className={inputBase}
+                  />
+                </div>
+              )}
 
+              {dbType !== "cassandra" && (
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
@@ -350,6 +364,7 @@ export function ProvisionDialog() {
                   </div>
                 </div>
               </div>
+              )}
 
               <p className="text-[10px] text-muted-foreground">
                 Docker will pull the image if not already cached. First-time

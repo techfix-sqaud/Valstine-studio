@@ -92,11 +92,14 @@ export function ConnectionsList() {
                           ? "mysql"
                           : conn.type === "mssql"
                             ? "mssql"
-                            : "postgresql";
+                            : conn.type === "cassandra"
+                              ? "cassandra"
+                              : "postgresql";
+                      const host = conn.type === "cassandra" ? (conn.contactPoints?.join(",") ?? conn.host) : conn.host;
                       navigator.clipboard.writeText(
                         conn.type === "sqlite"
                           ? (conn.filename ?? conn.database)
-                          : `${scheme}://${conn.user ? conn.user + "@" : ""}${conn.host}:${conn.port}/${conn.database}`,
+                          : `${scheme}://${conn.user ? conn.user + "@" : ""}${host}:${conn.port}/${conn.database}`,
                       );
                     },
                   },
@@ -157,7 +160,9 @@ export function ConnectionsList() {
                 <span className="text-muted-foreground text-[10px] truncate">
                   {conn.type === "sqlite"
                     ? (conn.filename ?? conn.database)
-                    : `${conn.host}:${conn.port}/${conn.database}`}
+                    : conn.type === "cassandra"
+                      ? `${(conn.contactPoints ?? []).join(",") || conn.host}:${conn.port}/${conn.database || "(no keyspace)"}`
+                      : `${conn.host}:${conn.port}/${conn.database}`}
                 </span>
               </div>
               {conn.status === "connected" ? (

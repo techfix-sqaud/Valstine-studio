@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/app-store";
 import { showContextMenu } from "./ContextMenu";
 import * as api from "@/lib/api";
-import { DB_TYPE_META } from "@/lib/api";
+import { DB_TYPE_META, DB_TYPE_CAPABILITIES } from "@/lib/api";
 
 // ── Column node ──────────────────────────────────────────────────────────────
 function ColumnItem({ col, tableName }: { col: api.RemoteColumnInfo; tableName: string }) {
@@ -55,6 +55,8 @@ function ColumnItem({ col, tableName }: { col: api.RemoteColumnInfo; tableName: 
             sql = `-- Find references to column "${col.name}" in views and routines\nSELECT 'view' AS kind, TABLE_SCHEMA AS schema_name, TABLE_NAME AS object_name, NULL AS routine_name\nFROM information_schema.VIEW_TABLE_USAGE\nWHERE COLUMN_NAME = '${col.name}'\n\nUNION ALL\n\nSELECT 'routine' AS kind, ROUTINE_SCHEMA, NULL, ROUTINE_NAME\nFROM information_schema.ROUTINES\nWHERE ROUTINE_DEFINITION LIKE '%${col.name}%'\n\nORDER BY kind, schema_name;`;
           } else if (conn.type === "mssql") {
             sql = `-- Find references to column "${col.name}" in views, stored procedures, and triggers\nSELECT\n  o.type_desc AS kind,\n  s.name AS schema_name,\n  o.name AS object_name\nFROM sys.sql_modules m\nJOIN sys.objects o ON o.object_id = m.object_id\nJOIN sys.schemas s ON s.schema_id = o.schema_id\nWHERE m.definition LIKE '%${col.name}%'\n  AND o.type IN ('V','P','TR','FN','IF','TF')\nORDER BY o.type_desc, o.name;`;
+          } else if (conn.type === "cassandra") {
+            sql = `-- Cassandra has no views, functions, or triggers to search — CQL tables are\n-- self-contained. Check application code for references to "${col.name}" instead.`;
           } else {
             sql = `-- SQLite: search for "${col.name}" in view definitions\nSELECT 'view' AS kind, name AS object_name, sql AS definition\nFROM sqlite_master\nWHERE type IN ('view','trigger')\n  AND sql LIKE '%${col.name}%'\nORDER BY type, name;`;
           }
@@ -396,8 +398,8 @@ function SchemaGroup({ schema, defaultOpen }: { schema: string; defaultOpen: boo
             emptyText="No indexes"
           />
 
-          {/* Functions & Procedures — not SQLite */}
-          {connType !== "sqlite" && (
+          {/* Functions & Procedures */}
+          {connType && DB_TYPE_CAPABILITIES[connType].supportsFunctions && (
             <CategoryGroup
               key="functions"
               label="Functions" icon={FunctionSquare} iconClass="text-sky-400" indent="pl-10"
@@ -469,7 +471,7 @@ function SchemaGroup({ schema, defaultOpen }: { schema: string; defaultOpen: boo
           />
 
           {/* Sequences — PostgreSQL only */}
-          {connType === "pg" && (
+          {connType && DB_TYPE_CAPABILITIES[connType].supportsSequences && (
             <CategoryGroup
               key="sequences"
               label="Sequences" icon={ArrowUpDown} iconClass="text-teal-400" indent="pl-10"

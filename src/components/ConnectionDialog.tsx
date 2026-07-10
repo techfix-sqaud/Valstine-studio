@@ -12,7 +12,7 @@ import { DBConnection, DBType } from "@/lib/mock-data";
 import { DB_TYPE_META, testConnection, uploadSqliteFile } from "@/lib/api";
 import { Loader2, CheckCircle2, XCircle, Upload, ShieldAlert } from "lucide-react";
 
-const DB_TYPES: DBType[] = ["pg", "mysql", "sqlite", "mssql"];
+const DB_TYPES: DBType[] = ["pg", "mysql", "sqlite", "mssql", "cassandra"];
 
 function emptyConn(type: DBType = "pg"): Omit<DBConnection, "id"> {
   const meta = DB_TYPE_META[type];
@@ -28,6 +28,8 @@ function emptyConn(type: DBType = "pg"): Omit<DBConnection, "id"> {
     ssl: false,
     sslRejectUnauthorized: true,
     status: "disconnected" as const,
+    contactPoints: type === "cassandra" ? ["localhost"] : undefined,
+    localDataCenter: type === "cassandra" ? "datacenter1" : undefined,
   };
 }
 
@@ -70,6 +72,8 @@ export function ConnectionDialog() {
       type,
       port: DB_TYPE_META[type].defaultPort,
       host: type === "sqlite" ? "" : f.host || "localhost",
+      contactPoints: type === "cassandra" ? (f.contactPoints?.length ? f.contactPoints : ["localhost"]) : f.contactPoints,
+      localDataCenter: type === "cassandra" ? (f.localDataCenter || "datacenter1") : f.localDataCenter,
     }));
     setTestResult(null);
   };
@@ -119,7 +123,7 @@ export function ConnectionDialog() {
       alert("Connection name is required");
       return;
     }
-    if (form.type !== "sqlite" && !form.database.trim()) {
+    if (form.type !== "sqlite" && form.type !== "cassandra" && !form.database.trim()) {
       alert("Database name is required");
       return;
     }
@@ -144,6 +148,7 @@ export function ConnectionDialog() {
   };
 
   const isSQLite = form.type === "sqlite";
+  const isCassandra = form.type === "cassandra";
   const meta = DB_TYPE_META[form.type];
 
   return (
@@ -168,7 +173,7 @@ export function ConnectionDialog() {
             <label className="text-[11px] text-muted-foreground font-medium mb-1.5 block">
               Database Type
             </label>
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-5 gap-1.5">
               {DB_TYPES.map((t) => {
                 const m = DB_TYPE_META[t];
                 return (
@@ -277,16 +282,30 @@ export function ConnectionDialog() {
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-2">
                   <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
-                    Host
+                    {isCassandra ? "Contact Points" : "Host"}
                   </label>
-                  <input
-                    value={form.host}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, host: e.target.value }))
-                    }
-                    placeholder="localhost"
-                    className="w-full h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
+                  {isCassandra ? (
+                    <input
+                      value={(form.contactPoints ?? []).join(", ")}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          contactPoints: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
+                        }))
+                      }
+                      placeholder="localhost, 10.0.0.2"
+                      className="w-full h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  ) : (
+                    <input
+                      value={form.host}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, host: e.target.value }))
+                      }
+                      placeholder="localhost"
+                      className="w-full h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  )}
                 </div>
                 <div>
                   <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
@@ -306,16 +325,32 @@ export function ConnectionDialog() {
                 </div>
               </div>
 
+              {isCassandra && (
+                <div>
+                  <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
+                    Local Data Center
+                  </label>
+                  <input
+                    value={form.localDataCenter ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, localDataCenter: e.target.value }))
+                    }
+                    placeholder="datacenter1"
+                    className="w-full h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              )}
+
               <div>
                 <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
-                  Database
+                  {isCassandra ? "Keyspace" : "Database"}
                 </label>
                 <input
                   value={form.database}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, database: e.target.value }))
                   }
-                  placeholder="my_database"
+                  placeholder={isCassandra ? "my_keyspace" : "my_database"}
                   className="w-full h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>

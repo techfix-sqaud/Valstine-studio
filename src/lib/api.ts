@@ -15,6 +15,8 @@ function toPayload(conn: DBConnection) {
     filename: conn.filename,
     ssl: conn.ssl ?? false,
     sslRejectUnauthorized: conn.sslRejectUnauthorized ?? true,
+    contactPoints: conn.contactPoints,
+    localDataCenter: conn.localDataCenter,
   };
 }
 
@@ -473,4 +475,22 @@ export const DB_TYPE_META: Record<DBType, { label: string; defaultPort: number; 
   mysql: { label: 'MySQL', defaultPort: 3306, icon: '🐬', color: 'text-orange-400' },
   sqlite: { label: 'SQLite', defaultPort: 0, icon: '📦', color: 'text-cyan-400' },
   mssql: { label: 'SQL Server', defaultPort: 1433, icon: '🔷', color: 'text-red-400' },
+  cassandra: { label: 'Cassandra', defaultPort: 9042, icon: '🌀', color: 'text-purple-400' },
+};
+
+// Per-type UI capabilities — kept in sync with each DbAdapter's `capabilities`
+// in shared/db-core/adapters/*.ts (duplicated here since shared/db-core isn't
+// imported by the frontend bundle; see Phase 0 plan notes for why).
+export const DB_TYPE_CAPABILITIES: Record<DBType, {
+  supportsSchemas: boolean;
+  supportsFunctions: boolean;
+  supportsTriggers: boolean;
+  supportsSequences: boolean;
+  supportsExplain: boolean;
+}> = {
+  pg: { supportsSchemas: true, supportsFunctions: true, supportsTriggers: true, supportsSequences: true, supportsExplain: true },
+  mysql: { supportsSchemas: true, supportsFunctions: true, supportsTriggers: true, supportsSequences: false, supportsExplain: true },
+  sqlite: { supportsSchemas: true, supportsFunctions: false, supportsTriggers: true, supportsSequences: false, supportsExplain: true },
+  mssql: { supportsSchemas: true, supportsFunctions: true, supportsTriggers: true, supportsSequences: false, supportsExplain: true },
+  cassandra: { supportsSchemas: false, supportsFunctions: false, supportsTriggers: false, supportsSequences: false, supportsExplain: false },
 };

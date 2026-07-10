@@ -1,4 +1,4 @@
-export type DBType = 'pg' | 'mysql' | 'sqlite' | 'mssql';
+export type DBType = 'pg' | 'mysql' | 'sqlite' | 'mssql' | 'cassandra';
 
 export interface DBConnection {
   id: string;
@@ -15,6 +15,8 @@ export interface DBConnection {
   status: 'connected' | 'disconnected';
   color?: string; // hex color for visual environment distinction
   isProduction?: boolean; // enables destructive-query safety guard
+  contactPoints?: string[]; // Cassandra: comma-separated host list
+  localDataCenter?: string; // Cassandra: e.g. "datacenter1"
 }
 
 export interface DBTable {

@@ -5,7 +5,7 @@
 
 // ── Connection & SSH ─────────────────────────────────────────────────────
 
-export type DBType = 'pg' | 'mysql' | 'sqlite' | 'mssql';
+export type DBType = 'pg' | 'mysql' | 'sqlite' | 'mssql' | 'cassandra';
 
 export interface StoredConnection {
   id: string;
