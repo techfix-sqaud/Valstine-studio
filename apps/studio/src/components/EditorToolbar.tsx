@@ -4,13 +4,13 @@ import {
   Play, Sparkles, StopCircle, Database, WrapText, Zap, BookOpen, Save, X,
   ArrowLeftRight, FlaskConical, FolderOpen, Download, AlertTriangle, ListChecks,
 } from "lucide-react";
-import { useAppStore } from "@/store/app-store";
+import { useAppStore } from "@valstine/core/store/app-store";
 import { getActiveEditor } from "@/lib/editor-ref";
-import * as api from "@/lib/api";
+import * as api from "@valstine/core/lib/api";
 import { ExplainModal } from "./ExplainModal";
 import { SavedQueriesModal } from "./SavedQueriesModal";
 import { translateSqlDialect } from "@/lib/sql-formatter";
-import type { DBType } from "@/lib/mock-data";
+import type { DBType } from "@valstine/core/lib/mock-data";
 
 // ── Portal-based popup — escapes any ancestor overflow clipping ────────────────
 function PortalPopup({
@@ -176,8 +176,8 @@ function TranslatePopup({ anchor, open, fromType, sql, onTranslated, onClose }: 
 function SessionPopup({ anchor, open, tabs, addTab, setActiveTab, onClose }: {
   anchor: HTMLElement | null;
   open: boolean;
-  tabs: import("@/lib/mock-data").QueryTab[];
-  addTab: (tab: import("@/lib/mock-data").QueryTab) => void;
+  tabs: import("@valstine/core/lib/mock-data").QueryTab[];
+  addTab: (tab: import("@valstine/core/lib/mock-data").QueryTab) => void;
   setActiveTab: (id: string) => void;
   onClose: () => void;
 }) {

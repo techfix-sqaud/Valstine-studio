@@ -12,10 +12,10 @@ import {
   TableProperties,
   TrendingUp,
 } from "lucide-react";
-import type { QueryHistoryEntry } from "@/store/app-store";
-import { DBConnection, mockTables } from "@/lib/mock-data";
-import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store/app-store";
+import type { QueryHistoryEntry } from "@valstine/core/store/app-store";
+import { DBConnection, mockTables } from "@valstine/core/lib/mock-data";
+import { cn } from "@valstine/ui/lib/utils";
+import { useAppStore } from "@valstine/core/store/app-store";
 
 type LoadPoint = {
   label: string;

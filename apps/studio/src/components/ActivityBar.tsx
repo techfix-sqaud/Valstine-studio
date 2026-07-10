@@ -12,8 +12,8 @@ import {
   Send,
   Trash2,
 } from "lucide-react";
-import { useAppStore } from "@/store/app-store";
-import { cn } from "@/lib/utils";
+import { useAppStore } from "@valstine/core/store/app-store";
+import { cn } from "@valstine/ui/lib/utils";
 
 type SidebarTab =
   | "explorer"

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { useAppStore } from "@/store/app-store";
+import { useAppStore } from "@valstine/core/store/app-store";
 import { getActiveEditor } from "@/lib/editor-ref";
-import { cn } from "@/lib/utils";
+import { cn } from "@valstine/ui/lib/utils";
 
 interface MenuItem {
   label: string;

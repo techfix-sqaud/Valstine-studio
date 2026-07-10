@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Key, Columns3, ZoomIn, ZoomOut, Maximize2, Loader2, RefreshCw } from 'lucide-react';
-import { useAppStore } from '@/store/app-store';
-import { DBTable, DBColumn } from '@/lib/mock-data';
-import * as api from '@/lib/api';
+import { useAppStore } from '@valstine/core/store/app-store';
+import { DBTable, DBColumn } from '@valstine/core/lib/mock-data';
+import * as api from '@valstine/core/lib/api';
 
 interface TablePosition {
   x: number;
@@ -51,7 +51,7 @@ function getInitialPositions(tables: DBTable[]): Record<string, TablePosition> {
   return positions;
 }
 
-async function loadRealSchema(conn: import('@/lib/mock-data').DBConnection): Promise<DBTable[]> {
+async function loadRealSchema(conn: import('@valstine/core/lib/mock-data').DBConnection): Promise<DBTable[]> {
   const schemas = await api.fetchSchemas(conn);
 
   const tableResults = await Promise.allSettled(

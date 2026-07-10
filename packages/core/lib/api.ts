@@ -249,6 +249,15 @@ export interface SchemaDiffEntry {
   migrationDown?: string;
 }
 
+// Exported data shape stored in a diff tab (see @valstine/core/store/app-store and apps/studio's SchemaDiffView).
+export interface SchemaDiffData {
+  diffs: SchemaDiffEntry[];
+  migrationUp: string;
+  migrationDown: string;
+  sourceLabel: string;
+  targetLabel: string;
+}
+
 export interface SchemaDiffResult {
   ok: boolean;
   diffs: SchemaDiffEntry[];

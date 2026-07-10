@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAppStore } from "@/store/app-store";
+import { useAppStore } from "@valstine/core/store/app-store";
 import {
   Database,
   FolderTree,
@@ -15,7 +15,7 @@ import {
   Search,
   ChevronRight,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@valstine/ui/lib/utils";
 
 const tourSteps = [
   {

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+<<<<<<< HEAD
 import { DBConnection, QueryTab, QueryResult, defaultTabs } from '@/lib/mock-data';
 import * as api from '@/lib/api';
 import { DEFAULT_PRESET_ID, DEFAULT_TERMINAL_FONT, DEFAULT_TERMINAL_FONT_SIZE, getPresetById } from '@/lib/terminal-themes';
@@ -9,6 +10,14 @@ import { restoreSessionFromIDB } from '@/hooks/use-session-persistence';
 import { analyzeImpact, type ImpactReport } from '@/lib/impact-analysis';
 import { callSqlOptimizer, isLikelyDestructive, type SqlOptimizerResult, type RecycleBinEntry } from '@/lib/sql-optimizer';
 import { sendAiChat } from '@/Actions/AIActions';
+=======
+import { DBConnection, QueryTab, QueryResult, defaultTabs } from '../lib/mock-data';
+import * as api from '../lib/api';
+import { DEFAULT_PRESET_ID, DEFAULT_TERMINAL_FONT, DEFAULT_TERMINAL_FONT_SIZE, getPresetById } from '../lib/terminal-themes';
+import type { SourceControlProvider, SourceControlSettings } from '../lib/source-control';
+import { extractVariables, substituteVariables } from '../lib/query-variables';
+import { detectDestructiveOperation, type DestructiveOp } from '../lib/query-safety';
+>>>>>>> 3195621 (feat(core): refactor import paths to relative in source-control and app-store modules)
 
 // Check every semicolon-separated statement, not just the first
 function detectAnyDestructive(sql: string): DestructiveOp | null {

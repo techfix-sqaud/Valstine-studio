@@ -6,10 +6,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@/components/ui/dialog";
-import { useAppStore } from "@/store/app-store";
-import { DBConnection, DBType } from "@/lib/mock-data";
-import { DB_TYPE_META, testConnection, uploadSqliteFile } from "@/lib/api";
+} from "@valstine/ui/components/ui/dialog";
+import { useAppStore } from "../store/app-store";
+import { DBConnection, DBType } from "../lib/mock-data";
+import { DB_TYPE_META, testConnection, uploadSqliteFile } from "../lib/api";
 import { Loader2, CheckCircle2, XCircle, Upload, ShieldAlert } from "lucide-react";
 
 const DB_TYPES: DBType[] = ["pg", "mysql", "sqlite", "mssql", "cassandra"];

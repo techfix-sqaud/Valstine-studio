@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Sparkles, Send } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store/app-store";
+import { cn } from "@valstine/ui/lib/utils";
+import { useAppStore } from "@valstine/core/store/app-store";
 import { ApiGenerator } from "@/components/ApiGenerator";
 import { ApiTester } from "@/components/ApiTester";
 

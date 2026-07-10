@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
-import { useNavigate } from "react-router-dom";
+// Studio is a separate app/deployment now, not a route within this app —
+// cross-app "navigation" is a real page load. Defaults to same-origin
+// (e.g. behind a shared reverse proxy); override via VITE_STUDIO_URL when
+// Studio is hosted on a different origin.
+const STUDIO_URL = (import.meta.env.VITE_STUDIO_URL ?? "").replace(/\/$/, "");
+function goToStudio(path: "/welcome" | "/studio") {
+  window.location.href = `${STUDIO_URL}${path}`;
+}
 import {
   Bell,
   ChevronDown,
@@ -19,7 +26,7 @@ import {
   TerminalSquare,
   WandSparkles,
 } from "lucide-react";
-import { useAppStore } from "@/store/app-store";
+import { useAppStore } from "@valstine/core/store/app-store";
 import {
   analystActivities,
   analystTabs,
@@ -35,7 +42,7 @@ import {
   visualizationCards,
   type AnalystActivityId,
 } from "./analyst-os-data";
-import { ResizableHandle } from "@/components/ui/resizable";
+import { ResizableHandle } from "@valstine/ui/components/ui/resizable";
 
 const sidebarTitles: Record<
   AnalystActivityId,
@@ -205,7 +212,6 @@ const paletteCommands = [
 ];
 
 export function ValstineAnalystOSApp() {
-  const navigate = useNavigate();
   const { theme, toggleTheme } = useAppStore();
   const [activeActivity, setActiveActivity] =
     useState<AnalystActivityId>("explorer");
@@ -752,13 +758,13 @@ export function ValstineAnalystOSApp() {
               {bottomPanelOpen ? "Hide Panel" : "Show Panel"}
             </button>
             <button
-              onClick={() => navigate("/welcome")}
+              onClick={() => goToStudio("/welcome")}
               className={ghostButtonClass}
             >
               Product Hub
             </button>
             <button
-              onClick={() => navigate("/studio")}
+              onClick={() => goToStudio("/studio")}
               className={ghostButtonClass}
             >
               Open Studio

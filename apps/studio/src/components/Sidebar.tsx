@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAppStore } from "@/store/app-store";
+import { useAppStore } from "@valstine/core/store/app-store";
 import { AIChatSidebar } from "./AIChatSidebar";
 import { DatabaseExplorer } from "./DatabaseExplorer";
 import { ConnectionsList } from "./ConnectionsList";
 import SchemaCompare from "./SchemaCompare";
 import GitPanel from "./GitPanel";
 import { useSchemaCache } from "@/hooks/use-schema-cache";
-import * as api from "@/lib/api";
+import * as api from "@valstine/core/lib/api";
 import {
   Search,
   FolderTree,
@@ -21,8 +21,8 @@ import {
   AlertTriangle,
   Rows3,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { cn } from "@valstine/ui/lib/utils";
+import { useIsMobile } from "@valstine/ui/hooks/use-mobile";
 
 const sidebarItems = [
   { id: "explorer" as const, icon: FolderTree, label: "Explorer" },

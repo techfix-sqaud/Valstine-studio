@@ -1,16 +1,16 @@
 import { useState, useEffect } from "react";
-import { useAppStore } from "@/store/app-store";
-import { schemaDiff, fetchSchemas, fetchDatabases } from "@/lib/api";
+import { useAppStore } from "@valstine/core/store/app-store";
+import { schemaDiff, fetchSchemas, fetchDatabases } from "@valstine/core/lib/api";
 import { ArrowRightLeft, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@valstine/ui/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+} from "@valstine/ui/components/ui/select";
+import { cn } from "@valstine/ui/lib/utils";
 
 type CompareMode = "schemas" | "databases" | "connections";
 

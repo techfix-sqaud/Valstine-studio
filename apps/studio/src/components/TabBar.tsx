@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { X, FileCode2, LayoutDashboard, Plus, Share2 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store/app-store";
+import { cn } from "@valstine/ui/lib/utils";
+import { useAppStore } from "@valstine/core/store/app-store";
 import { showContextMenu } from "./ContextMenu";
 
 export function TabBar() {

@@ -3,6 +3,14 @@ name: Release Dev
 on:
   push:
     branches: [dev]
+    paths:
+      - "apps/studio/**"
+      - "packages/ui/**"
+      - "packages/core/**"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig.base.json"
+      - ".github/workflows/release-dev.yml"
 
 permissions:
   contents: write

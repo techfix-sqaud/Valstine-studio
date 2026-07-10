@@ -14,10 +14,10 @@ import {
   Clock,
   AlertCircle,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store/app-store";
-import * as api from "@/lib/api";
-import type { RemoteColumnInfo } from "@/lib/api";
+import { cn } from "@valstine/ui/lib/utils";
+import { useAppStore } from "@valstine/core/store/app-store";
+import * as api from "@valstine/core/lib/api";
+import type { RemoteColumnInfo } from "@valstine/core/lib/api";
 
 // ── Type mapping ───────────────────────────────────────────────
 

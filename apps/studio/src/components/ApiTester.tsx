@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import Editor from "@monaco-editor/react";
-import * as api from "@/lib/api";
+import * as api from "@valstine/core/lib/api";
 import {
   Send,
   Plus,
@@ -14,8 +14,8 @@ import {
   BookmarkCheck,
   X,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store/app-store";
+import { cn } from "@valstine/ui/lib/utils";
+import { useAppStore } from "@valstine/core/store/app-store";
 
 // ── Types ──────────────────────────────────────────────────────
 

@@ -41,7 +41,7 @@ export interface QueryTab {
   connectionId: string;
   isDirty: boolean;
   type?: 'query' | 'dashboard' | 'schema' | 'schema-diff' | 'api-generator' | 'api-tester';
-  diffData?: import('@/components/SchemaDiffView').SchemaDiffData;
+  diffData?: import('./api').SchemaDiffData;
 }
 
 export interface QueryResult {

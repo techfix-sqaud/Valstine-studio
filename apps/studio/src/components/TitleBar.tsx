@@ -1,5 +1,5 @@
 import { Database, Search, Settings, Moon, Sun, Menu } from "lucide-react";
-import { useAppStore } from "@/store/app-store";
+import { useAppStore } from "@valstine/core/store/app-store";
 import { MenuBar } from "./MenuBar";
 
 export function TitleBar() {

@@ -10,7 +10,7 @@ import {
   Table2,
   Sparkles,
 } from "lucide-react";
-import { useAppStore } from "@/store/app-store";
+import { useAppStore } from "@valstine/core/store/app-store";
 
 const commands = [
   {

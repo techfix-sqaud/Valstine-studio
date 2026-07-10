@@ -29,8 +29,8 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store/app-store";
+import { cn } from "@valstine/ui/lib/utils";
+import { useAppStore } from "@valstine/core/store/app-store";
 import { QueryHistory } from "./QueryHistory";
 import { showContextMenu } from "./ContextMenu";
 import TerminalComponent from "./Terminal";

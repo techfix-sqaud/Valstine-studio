@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Clock, Trash2, Play, Copy, Check, Search, X, Zap, AlertTriangle } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useAppStore, QueryHistoryEntry } from "@/store/app-store";
+import { cn } from "@valstine/ui/lib/utils";
+import { useAppStore, QueryHistoryEntry } from "@valstine/core/store/app-store";
 
 const SLOW_MS = 1000;
 const VERY_SLOW_MS = 5000;

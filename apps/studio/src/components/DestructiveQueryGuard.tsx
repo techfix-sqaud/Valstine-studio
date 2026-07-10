@@ -1,6 +1,6 @@
 import { ShieldAlert, AlertTriangle, Loader2, X } from "lucide-react";
-import { useAppStore } from "@/store/app-store";
-import { SEVERITY_LABELS } from "@/lib/query-safety";
+import { useAppStore } from "@valstine/core/store/app-store";
+import { SEVERITY_LABELS } from "@valstine/core/lib/query-safety";
 
 export function DestructiveQueryGuard() {
   const {

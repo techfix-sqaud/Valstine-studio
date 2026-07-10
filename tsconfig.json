@@ -1,25 +1,11 @@
 {
-  "compilerOptions": {
-    "allowJs": true,
-    "noImplicitAny": false,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "paths": {
-      "@/*": ["./src/*"]
-    },
-    "skipLibCheck": true,
-    "strictNullChecks": false
-  },
   "files": [],
   "references": [
-    {
-      "path": "./tsconfig.app.json"
-    },
-    {
-      "path": "./tsconfig.node.json"
-    },
-    {
-      "path": "./server/tsconfig.json"
-    }
+    { "path": "./apps/studio/tsconfig.app.json" },
+    { "path": "./apps/studio/tsconfig.node.json" },
+    { "path": "./apps/studio/server/tsconfig.json" },
+    { "path": "./apps/analyst-os/tsconfig.json" },
+    { "path": "./packages/ui/tsconfig.json" },
+    { "path": "./packages/core/tsconfig.json" }
   ]
 }

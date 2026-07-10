@@ -2,7 +2,14 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import Editor, { type BeforeMount } from "@monaco-editor/react";
 import type * as Monaco from "monaco-editor";
 import { Group, Panel, Separator } from "react-resizable-panels";
-import { useNavigate } from "react-router-dom";
+// Studio is a separate app/deployment now, not a route within this app —
+// cross-app "navigation" is a real page load. Defaults to same-origin
+// (e.g. behind a shared reverse proxy); override via VITE_STUDIO_URL when
+// Studio is hosted on a different origin.
+const STUDIO_URL = (import.meta.env.VITE_STUDIO_URL ?? "").replace(/\/$/, "");
+function goToStudio(path: "/welcome" | "/studio") {
+  window.location.href = `${STUDIO_URL}${path}`;
+}
 import {
   Bell,
   ChevronDown,
@@ -23,8 +30,8 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-import { ConnectionDialog } from "@/components/ConnectionDialog";
-import { ResizableHandle } from "@/components/ui/resizable";
+import { ConnectionDialog } from "@valstine/core/components/ConnectionDialog";
+import { ResizableHandle } from "@valstine/ui/components/ui/resizable";
 import {
   Bar,
   BarChart,
@@ -34,10 +41,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import * as api from "@/lib/api";
+import * as api from "@valstine/core/lib/api";
 import { BIStudioPanel } from "./BIStudioPanel";
-import type { DBConnection, QueryResult } from "@/lib/mock-data";
-import { useAppStore } from "@/store/app-store";
+import type { DBConnection, QueryResult } from "@valstine/core/lib/mock-data";
+import { useAppStore } from "@valstine/core/store/app-store";
 import {
   analystActivities,
   analystTabs,
@@ -524,7 +531,6 @@ const buildInsightMessage = (result: QueryResult | null) => {
 };
 
 export function ValstineAnalystOSWorkbench() {
-  const navigate = useNavigate();
   const {
     theme,
     toggleTheme,
@@ -1766,8 +1772,8 @@ export function ValstineAnalystOSWorkbench() {
       {
         label: "Go",
         items: [
-          { label: "Product Hub", action: () => navigate("/welcome") },
-          { label: "Open Studio", action: () => navigate("/studio") },
+          { label: "Product Hub", action: () => goToStudio("/welcome") },
+          { label: "Open Studio", action: () => goToStudio("/studio") },
         ],
       },
       {

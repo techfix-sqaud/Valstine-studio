@@ -1,7 +1,7 @@
 import { useRef, useCallback } from "react";
 import Editor, { OnMount, BeforeMount } from "@monaco-editor/react";
 import type * as Monaco from "monaco-editor";
-import { useAppStore } from "@/store/app-store";
+import { useAppStore } from "@valstine/core/store/app-store";
 import { registerSQLCompletion } from "@/lib/sql-completion";
 import { useSchemaCache } from "@/hooks/use-schema-cache";
 import { formatSQL } from "@/lib/sql-formatter";

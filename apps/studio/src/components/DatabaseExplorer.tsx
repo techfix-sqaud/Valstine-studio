@@ -23,11 +23,11 @@ import {
   KeyRound,
   FunctionSquare,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store/app-store";
+import { cn } from "@valstine/ui/lib/utils";
+import { useAppStore } from "@valstine/core/store/app-store";
 import { showContextMenu } from "./ContextMenu";
-import * as api from "@/lib/api";
-import { DB_TYPE_META, DB_TYPE_CAPABILITIES } from "@/lib/api";
+import * as api from "@valstine/core/lib/api";
+import { DB_TYPE_META, DB_TYPE_CAPABILITIES } from "@valstine/core/lib/api";
 
 // ── Column node ──────────────────────────────────────────────────────────────
 function ColumnItem({ col, tableName }: { col: api.RemoteColumnInfo; tableName: string }) {

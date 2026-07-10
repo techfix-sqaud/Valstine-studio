@@ -10,10 +10,10 @@ import {
   Check,
   RefreshCw,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store/app-store";
-import { DB_TYPE_META, provisionDatabase } from "@/lib/api";
-import { DBType } from "@/lib/mock-data";
+import { cn } from "@valstine/ui/lib/utils";
+import { useAppStore } from "@valstine/core/store/app-store";
+import { DB_TYPE_META, provisionDatabase } from "@valstine/core/lib/api";
+import { DBType } from "@valstine/core/lib/mock-data";
 
 // ── Helpers ────────────────────────────────────────────────────
 

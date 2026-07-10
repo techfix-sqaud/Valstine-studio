@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { X, Zap, ChevronRight, ChevronDown, Lightbulb, AlertTriangle, Info } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@valstine/ui/lib/utils";
 
 // ── PostgreSQL node tree ─────────────────────────────────────────────────────
 

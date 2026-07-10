@@ -27,7 +27,7 @@ import {
   TableProperties,
   Zap,
 } from "lucide-react";
-import type { DBConnection, QueryResult } from "@/lib/mock-data";
+import type { DBConnection, QueryResult } from "@valstine/core/lib/mock-data";
 import {
   excelTemplateLibrary,
   type AnalystActivityId,

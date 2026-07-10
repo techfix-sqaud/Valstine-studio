@@ -20,11 +20,18 @@ import {
   LoaderCircle,
   RefreshCw,
 } from "lucide-react";
+<<<<<<< HEAD
 import { cn } from "@/lib/utils";
 import { useAppStore, type AccountAuthProvider } from "@/store/app-store";
 import { TERMINAL_PRESETS, getPresetById } from "@/lib/terminal-themes";
 import { getSourceControlProviderLabel } from "@/lib/source-control";
 import { AI_AGENT_URL } from "@/Helpers/apis";
+=======
+import { cn } from "@valstine/ui/lib/utils";
+import { useAppStore, type AccountAuthProvider } from "@valstine/core/store/app-store";
+import { TERMINAL_PRESETS, getPresetById } from "@valstine/core/lib/terminal-themes";
+import { getSourceControlProviderLabel } from "@valstine/core/lib/source-control";
+>>>>>>> 3195621 (feat(core): refactor import paths to relative in source-control and app-store modules)
 
 type Section =
   | "general"

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useAppStore } from "@/store/app-store";
-import * as api from "@/lib/api";
+import { useAppStore } from "@valstine/core/store/app-store";
+import * as api from "@valstine/core/lib/api";
 import {
   SchemaCache,
   ColumnMeta,

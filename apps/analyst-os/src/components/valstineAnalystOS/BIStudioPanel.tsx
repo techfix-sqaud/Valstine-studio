@@ -18,7 +18,7 @@ import {
   YAxis,
 } from "recharts";
 import { Plus, Trash2, Zap } from "lucide-react";
-import type { QueryResult } from "@/lib/mock-data";
+import type { QueryResult } from "@valstine/core/lib/mock-data";
 
 type ChartType = "bar" | "line" | "area" | "scatter" | "pie" | "heatmap" | "kpi";
 

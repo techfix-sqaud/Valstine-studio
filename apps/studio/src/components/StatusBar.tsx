@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { GitBranch, Database, Wifi } from "lucide-react";
-import { useAppStore } from "@/store/app-store";
-import { DB_TYPE_META, gitStatus } from "@/lib/api";
+import { useAppStore } from "@valstine/core/store/app-store";
+import { DB_TYPE_META, gitStatus } from "@valstine/core/lib/api";
 
 export function StatusBar() {
   const { activeConnectionId, connections } = useAppStore();

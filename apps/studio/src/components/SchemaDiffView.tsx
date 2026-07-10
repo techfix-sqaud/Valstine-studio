@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { useAppStore } from "@/store/app-store";
-import { SchemaDiffEntry } from "@/lib/api";
+import { useAppStore } from "@valstine/core/store/app-store";
+import { SchemaDiffEntry, SchemaDiffData } from "@valstine/core/lib/api";
 import {
   Copy,
   FileCode2,
@@ -12,8 +12,8 @@ import {
   Lock,
   Clock,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Button } from "@valstine/ui/components/ui/button";
+import { cn } from "@valstine/ui/lib/utils";
 
 /* ── Migration risk analysis ── */
 type RiskLevel = "critical" | "warn" | "info";
@@ -451,15 +451,6 @@ function ChangeSummary({ diffs }: { diffs: SchemaDiffEntry[] }) {
       )}
     </div>
   );
-}
-
-/* ── Exported data shape stored in the tab ── */
-export interface SchemaDiffData {
-  diffs: SchemaDiffEntry[];
-  migrationUp: string;
-  migrationDown: string;
-  sourceLabel: string;
-  targetLabel: string;
 }
 
 /* ── Main full-screen diff view (rendered in main editor area) ── */

@@ -2,8 +2,8 @@ import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { useAppStore } from "@/store/app-store";
-import { getPresetById } from "@/lib/terminal-themes";
+import { useAppStore } from "@valstine/core/store/app-store";
+import { getPresetById } from "@valstine/core/lib/terminal-themes";
 
 const isElectron =
   typeof window !== "undefined" && !!(window as any).electronAPI?.isElectron;

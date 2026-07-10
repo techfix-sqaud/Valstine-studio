@@ -24,7 +24,7 @@ import {
   Waypoints,
   Workflow,
 } from "lucide-react";
-import { useAppStore } from "@/store/app-store";
+import { useAppStore } from "@valstine/core/store/app-store";
 
 function detectPlatform(): "mac" | "windows" | "linux" | "unknown" {
   const ua = navigator.userAgent.toLowerCase();
@@ -1040,7 +1040,12 @@ export default function Landing() {
       completeOnboarding();
     }
 
-    navigate("/analyst-os");
+    // AnalystOS is a separate app/deployment now, not a route within this app —
+    // this is a real page load. Defaults to same-origin path (e.g. behind a
+    // shared reverse proxy); override via VITE_ANALYST_OS_URL when AnalystOS
+    // is hosted on a different origin.
+    const analystOsUrl = import.meta.env.VITE_ANALYST_OS_URL ?? "/analyst-os";
+    window.location.href = analystOsUrl;
   };
 
   const handlePricingAction = (action: "launch" | "contact") => {

@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+<<<<<<< HEAD
 import { Bot, Send, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
 import { useSchemaCache } from "@/hooks/use-schema-cache";
 import { buildAIContextPrefix } from "@/lib/ai-context";
 import { cn } from "@/lib/utils";
 import { QuickActionsPanel } from "./ui/aiActionsPanel";
+=======
+import { Bot, Send, Sparkles, Trash2, Wand2, Zap, Search, FileText, TrendingUp, Bug, BookOpen, ChevronDown } from "lucide-react";
+import { useAppStore } from "@valstine/core/store/app-store";
+import { cn } from "@valstine/ui/lib/utils";
+>>>>>>> 3195621 (feat(core): refactor import paths to relative in source-control and app-store modules)
 
 function formatTime(value: string) {
   return new Date(value).toLocaleTimeString([], {

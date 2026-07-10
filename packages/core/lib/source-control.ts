@@ -4,14 +4,14 @@ import {
   adoListRepos,
   type ADOProfile,
   type ADORepository,
-} from "@/lib/azure-devops";
+} from "./azure-devops";
 import {
   ghCreateRepo,
   ghGetUser,
   ghListRepos,
   type GHRepo,
   type GHUser,
-} from "@/lib/github";
+} from "./github";
 
 export type SourceControlProvider = "github" | "azure-devops";
 

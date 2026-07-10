@@ -1,8 +1,8 @@
 import { Database, Plug, PlugZap, Plus, HardDriveDownload } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store/app-store";
+import { cn } from "@valstine/ui/lib/utils";
+import { useAppStore } from "@valstine/core/store/app-store";
 import { showContextMenu } from "./ContextMenu";
-import { DB_TYPE_META } from "@/lib/api";
+import { DB_TYPE_META } from "@valstine/core/lib/api";
 
 export function ConnectionsList() {
   const {

@@ -5,7 +5,7 @@ if (!releaseType || !["patch", "minor", "major"].includes(releaseType)) {
   process.exit(1);
 }
 
-const packageJsonPath = new URL("../package.json", import.meta.url);
+const packageJsonPath = new URL("../../../package.json", import.meta.url);
 const packageJson = await Bun.file(packageJsonPath).json();
 
 const versionMatch = /^(\d+)\.(\d+)\.(\d+)$/.exec(packageJson.version);

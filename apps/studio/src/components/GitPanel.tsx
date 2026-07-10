@@ -16,9 +16,9 @@ import {
   githubClone,
   githubSchemaSql,
   GitFileStatus,
-} from "@/lib/api";
-import { ghGetFile, ghPushFile, ghParseRepoUrl } from "@/lib/github";
-import { useAppStore } from "@/store/app-store";
+} from "@valstine/core/lib/api";
+import { ghGetFile, ghPushFile, ghParseRepoUrl } from "@valstine/core/lib/github";
+import { useAppStore } from "@valstine/core/store/app-store";
 import {
   createSourceControlRepo,
   getSourceControlProviderLabel,
@@ -28,7 +28,7 @@ import {
   type SourceControlConfig,
   type SourceControlProfile,
   type SourceControlRepo,
-} from "@/lib/source-control";
+} from "@valstine/core/lib/source-control";
 import {
   GitBranch,
   GitCommit,
@@ -56,22 +56,22 @@ import {
   FolderDown,
   CloudUpload,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@valstine/ui/components/ui/button";
+import { Input } from "@valstine/ui/components/ui/input";
+import { Textarea } from "@valstine/ui/components/ui/textarea";
+import { ScrollArea } from "@valstine/ui/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@valstine/ui/components/ui/select";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+} from "@valstine/ui/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -79,9 +79,9 @@ import {
   DialogTitle,
   DialogFooter,
   DialogDescription,
-} from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+} from "@valstine/ui/components/ui/dialog";
+import { Badge } from "@valstine/ui/components/ui/badge";
+import { Separator } from "@valstine/ui/components/ui/separator";
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   M: { label: "Modified", color: "text-yellow-400" },

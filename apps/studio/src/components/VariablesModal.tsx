@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Variable } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@valstine/ui/lib/utils";
 
 interface Props {
   open: boolean;

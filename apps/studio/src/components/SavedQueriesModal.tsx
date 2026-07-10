@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { X, BookOpen, Search, Trash2, Play, ChevronDown } from "lucide-react";
-import { cn } from "@/lib/utils";
-import * as api from "@/lib/api";
-import { useAppStore } from "@/store/app-store";
+import { cn } from "@valstine/ui/lib/utils";
+import * as api from "@valstine/core/lib/api";
+import { useAppStore } from "@valstine/core/store/app-store";
 
 interface Props {
   open: boolean;
