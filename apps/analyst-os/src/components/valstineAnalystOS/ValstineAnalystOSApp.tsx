@@ -27,6 +27,8 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { useAppStore } from "@valstine/core/store/app-store";
+import { THEME_OPTIONS, isDarkTheme, applyThemeClass } from "@valstine/core/lib/themes";
+import { ThemeMenu } from "@valstine/ui/components/theme-menu";
 import {
   analystActivities,
   analystTabs,
@@ -212,7 +214,7 @@ const paletteCommands = [
 ];
 
 export function ValstineAnalystOSApp() {
-  const { theme, toggleTheme } = useAppStore();
+  const { theme, setTheme } = useAppStore();
   const [activeActivity, setActiveActivity] =
     useState<AnalystActivityId>("explorer");
   const [activeTabId, setActiveTabId] = useState(analystTabs[0].id);
@@ -245,11 +247,11 @@ export function ValstineAnalystOSApp() {
     })),
   );
 
-  const isDark = theme === "dark";
+  const isDark = isDarkTheme(theme);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", isDark);
-  }, [isDark]);
+    applyThemeClass(theme);
+  }, [theme]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -267,32 +269,29 @@ export function ValstineAnalystOSApp() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const themeVars = useMemo<CSSProperties>(
-    () =>
-      ({
-        "--analyst-bg": isDark ? "#0a0d14" : "#edf3fb",
-        "--analyst-chrome": isDark ? "#090d14" : "#e4ebf5",
-        "--analyst-toolbar": isDark ? "#0c111b" : "#f7faff",
-        "--analyst-panel": isDark ? "#0c111a" : "#f4f7fc",
-        "--analyst-editor": isDark ? "#0a0f17" : "#ffffff",
-        "--analyst-well": isDark ? "#0d1320" : "#edf2f9",
-        "--analyst-active": isDark ? "#0f1522" : "#ffffff",
-        "--analyst-gutter": isDark ? "#090e16" : "#e9eef6",
-        "--analyst-tooltip": isDark ? "#101522" : "#ffffff",
-        "--analyst-modal": isDark ? "#101522" : "#ffffff",
-        "--analyst-subtle": isDark
-          ? "rgba(255,255,255,0.05)"
-          : "rgba(15,23,42,0.045)",
-        "--analyst-border": isDark
-          ? "rgba(148,163,184,0.16)"
-          : "rgba(71,85,105,0.18)",
-        "--analyst-text": isDark ? "#e8eef8" : "#0f172a",
-        "--analyst-muted": isDark ? "#94a3b8" : "#475569",
-        "--analyst-dim": "#64748b",
-        "--analyst-line": isDark ? "#475569" : "#94a3b8",
-      }) as CSSProperties,
-    [isDark],
-  );
+  const themeVars = useMemo<CSSProperties>(() => {
+    // light / dark / black(space gray) picker — black falls back to dark when unset
+    const pick = (light: string, dark: string, black: string) =>
+      theme === "black" ? black : theme === "light" ? light : dark;
+    return {
+      "--analyst-bg": pick("#edf3fb", "#0a0d14", "#1f1f1f"),
+      "--analyst-chrome": pick("#e4ebf5", "#090d14", "#181818"),
+      "--analyst-toolbar": pick("#f7faff", "#0c111b", "#1a1a1a"),
+      "--analyst-panel": pick("#f4f7fc", "#0c111a", "#1a1a1a"),
+      "--analyst-editor": pick("#ffffff", "#0a0f17", "#1f1f1f"),
+      "--analyst-well": pick("#edf2f9", "#0d1320", "#202020"),
+      "--analyst-active": pick("#ffffff", "#0f1522", "#242424"),
+      "--analyst-gutter": pick("#e9eef6", "#090e16", "#161616"),
+      "--analyst-tooltip": pick("#ffffff", "#101522", "#242424"),
+      "--analyst-modal": pick("#ffffff", "#101522", "#242424"),
+      "--analyst-subtle": pick("rgba(15,23,42,0.045)", "rgba(255,255,255,0.05)", "rgba(255,255,255,0.04)"),
+      "--analyst-border": pick("rgba(71,85,105,0.18)", "rgba(148,163,184,0.16)", "rgba(255,255,255,0.10)"),
+      "--analyst-text": pick("#0f172a", "#e8eef8", "#ededed"),
+      "--analyst-muted": pick("#475569", "#94a3b8", "#9a9a9a"),
+      "--analyst-dim": "#64748b",
+      "--analyst-line": pick("#94a3b8", "#475569", "#5a5a5a"),
+    } as CSSProperties;
+  }, [theme]);
 
   const overlayStyle = useMemo<CSSProperties>(
     () => ({
@@ -769,17 +768,19 @@ export function ValstineAnalystOSApp() {
             >
               Open Studio
             </button>
-            <button
-              onClick={toggleTheme}
-              className={`rounded-lg border ${borderClass} ${subtleSurfaceClass} p-2 ${textMutedClass} transition hover:border-cyan-500/40 hover:text-[color:var(--analyst-text)]`}
-              aria-label="Toggle theme"
-            >
-              {isDark ? (
-                <Sun className="h-4 w-4" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
-            </button>
+            <ThemeMenu
+              value={theme}
+              options={THEME_OPTIONS}
+              onChange={(id) => setTheme(id as any)}
+              triggerClassName={`rounded-lg border ${borderClass} ${subtleSurfaceClass} p-2 ${textMutedClass} transition hover:border-cyan-500/40 hover:text-[color:var(--analyst-text)]`}
+              trigger={
+                isDark ? (
+                  <Moon className="h-4 w-4" />
+                ) : (
+                  <Sun className="h-4 w-4" />
+                )
+              }
+            />
             <button
               onClick={handleConnectDatabase}
               className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-medium text-cyan-200 transition hover:bg-cyan-500/20"

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@valstine/ui/lib/utils";
 import { useAppStore } from "@valstine/core/store/app-store";
+import { registerDbStudioThemes, dbStudioThemeName } from "@/lib/monaco-themes";
 import * as api from "@valstine/core/lib/api";
 import type { RemoteColumnInfo } from "@valstine/core/lib/api";
 
@@ -971,7 +972,8 @@ export function ApiGenerator() {
               height="100%"
               language={codeTab === "appsettings" ? "json" : codeTab === "csproj" ? "xml" : "csharp"}
               value={codeMap[codeTab]}
-              theme={theme === "dark" ? "vs-dark" : "light"}
+              beforeMount={registerDbStudioThemes}
+              theme={dbStudioThemeName(theme)}
               options={{
                 readOnly: true,
                 fontSize: 12,

@@ -1,6 +1,6 @@
 import type { SchemaCache } from '@/lib/sql-completion';
-import type { DBConnection } from '@/lib/mock-data';
-import type { QueryHistoryEntry } from '@/store/app-store';
+import { DBConnection } from '@valstine/core/lib/mock-data';
+import { QueryHistoryEntry } from '@valstine/core/store/app-store';
 
 const MAX_TABLES = 30;
 const MAX_COLS_PER_TABLE = 20;

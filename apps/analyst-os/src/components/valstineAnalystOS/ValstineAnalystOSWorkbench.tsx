@@ -45,6 +45,8 @@ import * as api from "@valstine/core/lib/api";
 import { BIStudioPanel } from "./BIStudioPanel";
 import type { DBConnection, QueryResult } from "@valstine/core/lib/mock-data";
 import { useAppStore } from "@valstine/core/store/app-store";
+import { THEME_OPTIONS, isDarkTheme, applyThemeClass } from "@valstine/core/lib/themes";
+import { ThemeMenu } from "@valstine/ui/components/theme-menu";
 import {
   analystActivities,
   analystTabs,
@@ -533,7 +535,7 @@ const buildInsightMessage = (result: QueryResult | null) => {
 export function ValstineAnalystOSWorkbench() {
   const {
     theme,
-    toggleTheme,
+    setTheme,
     connections,
     activeConnectionId,
     setActiveConnection,
@@ -587,11 +589,11 @@ export function ValstineAnalystOSWorkbench() {
     schema: { name: string; type: string }[];
   } | null>(null);
 
-  const isDark = theme === "dark";
+  const isDark = isDarkTheme(theme);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", isDark);
-  }, [isDark]);
+    applyThemeClass(theme);
+  }, [theme]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -672,49 +674,38 @@ export function ValstineAnalystOSWorkbench() {
     };
   }, [activeConnection]);
 
-  const themeVars = useMemo<CSSProperties>(
-    () =>
-      ({
-        "--analyst-bg": isDark ? "#06101f" : "#d8e7ff",
-        "--analyst-chrome": isDark ? "#081427" : "#bfd5fb",
-        "--analyst-toolbar": isDark ? "#0a1830" : "#e9f2ff",
-        "--analyst-panel": isDark ? "#0c1a31" : "#f2f7ff",
-        "--analyst-editor": isDark ? "#091527" : "#ffffff",
-        "--analyst-well": isDark ? "#0d1f39" : "#e4efff",
-        "--analyst-active": isDark ? "#132748" : "#f8fbff",
-        "--analyst-gutter": isDark ? "#081222" : "#d6e4fb",
-        "--analyst-tooltip": isDark ? "#12233d" : "#ffffff",
-        "--analyst-modal": isDark ? "#10213b" : "#ffffff",
-        "--analyst-subtle": isDark
-          ? "rgba(129,168,255,0.08)"
-          : "rgba(46, 104, 199, 0.10)",
-        "--analyst-border": isDark
-          ? "rgba(129,168,255,0.18)"
-          : "rgba(39, 84, 158, 0.22)",
-        "--analyst-text": isDark ? "#edf4ff" : "#0f2f5c",
-        "--analyst-muted": isDark ? "#a5bbd9" : "#3a6298",
-        "--analyst-dim": isDark ? "#7690b4" : "#587daf",
-        "--analyst-line": isDark ? "#5c7398" : "#7f9fc8",
-        "--analyst-accent": isDark ? "#81a8ff" : "#225bb3",
-        "--analyst-accent-soft": isDark
-          ? "rgba(129,168,255,0.18)"
-          : "rgba(34, 91, 179, 0.14)",
-        "--analyst-accent-border": isDark
-          ? "rgba(129,168,255,0.34)"
-          : "rgba(34, 91, 179, 0.30)",
-        "--analyst-brand-surface": isDark ? "#0c1a31" : "#214c91",
-        "--analyst-brand-elevated": isDark
-          ? "rgba(129,168,255,0.14)"
-          : "rgba(255,255,255,0.08)",
-        "--analyst-brand-border": isDark
-          ? "rgba(129,168,255,0.22)"
-          : "rgba(255,255,255,0.16)",
-        "--analyst-brand-text": isDark ? "#edf4ff" : "#ffffff",
-        "--analyst-brand-muted": isDark ? "#b6cae6" : "#dbe8ff",
-        "--analyst-brand-dim": isDark ? "#8da9d1" : "#b8cef4",
-      }) as CSSProperties,
-    [isDark],
-  );
+  const themeVars = useMemo<CSSProperties>(() => {
+    // light / dark / black(space gray) picker — accent hue stays blue in black mode
+    const pick = (light: string, dark: string, black: string) =>
+      theme === "black" ? black : theme === "light" ? light : dark;
+    return {
+      "--analyst-bg": pick("#d8e7ff", "#06101f", "#1f1f1f"),
+      "--analyst-chrome": pick("#bfd5fb", "#081427", "#181818"),
+      "--analyst-toolbar": pick("#e9f2ff", "#0a1830", "#1a1a1a"),
+      "--analyst-panel": pick("#f2f7ff", "#0c1a31", "#1a1a1a"),
+      "--analyst-editor": pick("#ffffff", "#091527", "#1f1f1f"),
+      "--analyst-well": pick("#e4efff", "#0d1f39", "#202020"),
+      "--analyst-active": pick("#f8fbff", "#132748", "#242424"),
+      "--analyst-gutter": pick("#d6e4fb", "#081222", "#161616"),
+      "--analyst-tooltip": pick("#ffffff", "#12233d", "#242424"),
+      "--analyst-modal": pick("#ffffff", "#10213b", "#242424"),
+      "--analyst-subtle": pick("rgba(46, 104, 199, 0.10)", "rgba(129,168,255,0.08)", "rgba(255,255,255,0.04)"),
+      "--analyst-border": pick("rgba(39, 84, 158, 0.22)", "rgba(129,168,255,0.18)", "rgba(255,255,255,0.10)"),
+      "--analyst-text": pick("#0f2f5c", "#edf4ff", "#ededed"),
+      "--analyst-muted": pick("#3a6298", "#a5bbd9", "#9a9a9a"),
+      "--analyst-dim": pick("#587daf", "#7690b4", "#6e6e6e"),
+      "--analyst-line": pick("#7f9fc8", "#5c7398", "#5a5a5a"),
+      "--analyst-accent": pick("#225bb3", "#81a8ff", "#5b9dff"),
+      "--analyst-accent-soft": pick("rgba(34, 91, 179, 0.14)", "rgba(129,168,255,0.18)", "rgba(91,157,255,0.16)"),
+      "--analyst-accent-border": pick("rgba(34, 91, 179, 0.30)", "rgba(129,168,255,0.34)", "rgba(91,157,255,0.32)"),
+      "--analyst-brand-surface": pick("#214c91", "#0c1a31", "#242424"),
+      "--analyst-brand-elevated": pick("rgba(255,255,255,0.08)", "rgba(129,168,255,0.14)", "rgba(255,255,255,0.08)"),
+      "--analyst-brand-border": pick("rgba(255,255,255,0.16)", "rgba(129,168,255,0.22)", "rgba(255,255,255,0.14)"),
+      "--analyst-brand-text": pick("#ffffff", "#edf4ff", "#ededed"),
+      "--analyst-brand-muted": pick("#dbe8ff", "#b6cae6", "#b0b0b0"),
+      "--analyst-brand-dim": pick("#b8cef4", "#8da9d1", "#808080"),
+    } as CSSProperties;
+  }, [theme]);
 
   const overlayStyle = useMemo<CSSProperties>(
     () => ({
@@ -744,6 +735,27 @@ export function ValstineAnalystOSWorkbench() {
         "editor.lineHighlightBackground": "#12233D",
         "editorCursor.foreground": "#81A8FF",
         "editorWhitespace.foreground": "#1D3252",
+      },
+    });
+
+    monaco.editor.defineTheme("analystos-black", {
+      base: "vs-dark",
+      inherit: true,
+      rules: [
+        { token: "keyword", foreground: "5B9DFF", fontStyle: "bold" },
+        { token: "string", foreground: "D4D4D4" },
+        { token: "number", foreground: "B5CEA8" },
+        { token: "comment", foreground: "6E6E6E", fontStyle: "italic" },
+      ],
+      colors: {
+        "editor.background": "#1f1f1f",
+        "editor.foreground": "#ededed",
+        "editorLineNumber.foreground": "#5a5a5a",
+        "editorLineNumber.activeForeground": "#a0a0a0",
+        "editor.selectionBackground": "#2a2a2a",
+        "editor.lineHighlightBackground": "#262626",
+        "editorCursor.foreground": "#5B9DFF",
+        "editorWhitespace.foreground": "#3a3a3a",
       },
     });
 
@@ -1812,7 +1824,6 @@ export function ValstineAnalystOSWorkbench() {
       handleOptimizeQuery,
       handleRunQuery,
       leftPanelOpen,
-      navigate,
       rightPanelOpen,
     ],
   );
@@ -2454,7 +2465,7 @@ export function ValstineAnalystOSWorkbench() {
         <div className="h-[calc(100%-45px)] min-h-[340px]">
           <Editor
             language="sql"
-            theme={isDark ? "analystos-dark" : "analystos-light"}
+            theme={theme === "black" ? "analystos-black" : theme === "light" ? "analystos-light" : "analystos-dark"}
             value={activeTab.content}
             beforeMount={beforeMount}
             onChange={(value) => updateSqlTabContent(activeTab.id, value ?? "")}
@@ -2566,18 +2577,19 @@ export function ValstineAnalystOSWorkbench() {
               >
                 <Search className="h-4 w-4" />
               </button>
-              <button
-                onClick={toggleTheme}
-                className={chromeIconButtonClass}
-                aria-label="Toggle theme"
-                title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-              >
-                {isDark ? (
-                  <Sun className="h-4 w-4" />
-                ) : (
-                  <Moon className="h-4 w-4" />
-                )}
-              </button>
+              <ThemeMenu
+                value={theme}
+                options={THEME_OPTIONS}
+                onChange={(id) => setTheme(id as any)}
+                triggerClassName={chromeIconButtonClass}
+                trigger={
+                  isDark ? (
+                    <Moon className="h-4 w-4" />
+                  ) : (
+                    <Sun className="h-4 w-4" />
+                  )
+                }
+              />
               <button
                 onClick={() => setRightPanelOpen((open) => !open)}
                 className={chromeIconButtonClass}

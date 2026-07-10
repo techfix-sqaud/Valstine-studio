@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@valstine/ui/lib/utils";
 import { useAppStore } from "@valstine/core/store/app-store";
+import { registerDbStudioThemes, dbStudioThemeName } from "@/lib/monaco-themes";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -479,7 +480,8 @@ export function ApiTester() {
                   language="json"
                   value={body}
                   onChange={(v) => setBody(v ?? "")}
-                  theme={theme === "dark" ? "vs-dark" : "light"}
+                  beforeMount={registerDbStudioThemes}
+                  theme={dbStudioThemeName(theme)}
                   options={{
                     fontSize: 12,
                     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
@@ -574,7 +576,8 @@ export function ApiTester() {
                     (response.headers["content-type"] ?? "").includes("json") ? "json" : "plaintext"
                   }
                   value={response.body}
-                  theme={theme === "dark" ? "vs-dark" : "light"}
+                  beforeMount={registerDbStudioThemes}
+                  theme={dbStudioThemeName(theme)}
                   options={{
                     readOnly: true,
                     fontSize: 12,

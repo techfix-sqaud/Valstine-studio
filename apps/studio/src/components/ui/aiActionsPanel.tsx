@@ -1,6 +1,6 @@
 import { QUICK_ACTIONS } from "@/Actions/AIActions";
-import { cn } from "@/lib/utils";
-import { useAppStore } from "@/store/app-store";
+import { cn } from "@valstine/ui/lib/utils";
+import { useAppStore } from "@valstine/core/store/app-store";
 import { Zap, ChevronDown } from "lucide-react";
 import React, { useState } from "react";
 

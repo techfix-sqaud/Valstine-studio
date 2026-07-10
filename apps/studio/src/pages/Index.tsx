@@ -19,21 +19,16 @@ import { ProvisionDialog } from "@/components/ProvisionDialog";
 import { ContextMenuProvider } from "@/components/ContextMenu";
 import { VariablesModal } from "@/components/VariablesModal";
 import { DestructiveQueryGuard } from "@/components/DestructiveQueryGuard";
-<<<<<<< HEAD
 import { ImpactAnalysisModal } from "@/components/ImpactAnalysisModal";
 import { SqlOptimizerModal } from "@/components/SqlOptimizerModal";
 import { SqlRecycleBinPanel } from "@/components/SqlRecycleBinPanel";
-import { useAppStore } from "@/store/app-store";
+import { useAppStore } from "@valstine/core/store/app-store";
+import { applyThemeClass } from "@valstine/core/lib/themes";
 import { useEffect } from "react";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsMobile } from "@valstine/ui/hooks/use-mobile";
 import { useSessionPersistence } from "@/hooks/use-session-persistence";
 import { useSchemaCache } from "@/hooks/use-schema-cache";
 import { buildSchemaContextBlock } from "@/lib/ai-context";
-=======
-import { useAppStore } from "@valstine/core/store/app-store";
-import { useEffect } from "react";
-import { useIsMobile } from "@valstine/ui/hooks/use-mobile";
->>>>>>> 3195621 (feat(core): refactor import paths to relative in source-control and app-store modules)
 
 const isElectronApp =
   typeof window !== "undefined" && (window as any).electronAPI?.isElectron;
@@ -85,7 +80,7 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
+    applyThemeClass(theme);
   }, [theme]);
 
   // Keep the schema context string in the store so executeQuery can pass it to the SQL Optimizer.

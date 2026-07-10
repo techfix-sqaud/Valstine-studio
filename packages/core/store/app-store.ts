@@ -1,23 +1,15 @@
 import { create } from 'zustand';
-<<<<<<< HEAD
-import { DBConnection, QueryTab, QueryResult, defaultTabs } from '@/lib/mock-data';
-import * as api from '@/lib/api';
-import { DEFAULT_PRESET_ID, DEFAULT_TERMINAL_FONT, DEFAULT_TERMINAL_FONT_SIZE, getPresetById } from '@/lib/terminal-themes';
-import type { SourceControlProvider, SourceControlSettings } from '@/lib/source-control';
-import { extractVariables, substituteVariables } from '@/lib/query-variables';
-import { detectDestructiveOperation, type DestructiveOp } from '@/lib/query-safety';
-import { restoreSessionFromIDB } from '@/hooks/use-session-persistence';
-import { analyzeImpact, type ImpactReport } from '@/lib/impact-analysis';
-import { callSqlOptimizer, isLikelyDestructive, type SqlOptimizerResult, type RecycleBinEntry } from '@/lib/sql-optimizer';
-import { sendAiChat } from '@/Actions/AIActions';
-=======
 import { DBConnection, QueryTab, QueryResult, defaultTabs } from '../lib/mock-data';
 import * as api from '../lib/api';
 import { DEFAULT_PRESET_ID, DEFAULT_TERMINAL_FONT, DEFAULT_TERMINAL_FONT_SIZE, getPresetById } from '../lib/terminal-themes';
 import type { SourceControlProvider, SourceControlSettings } from '../lib/source-control';
 import { extractVariables, substituteVariables } from '../lib/query-variables';
 import { detectDestructiveOperation, type DestructiveOp } from '../lib/query-safety';
->>>>>>> 3195621 (feat(core): refactor import paths to relative in source-control and app-store modules)
+import { restoreSessionFromIDB } from '../lib/session-restore';
+import { analyzeImpact, type ImpactReport } from '../lib/impact-analysis';
+import { callSqlOptimizer, isLikelyDestructive, type SqlOptimizerResult, type RecycleBinEntry } from '../lib/sql-optimizer';
+import { sendAiChat } from '../lib/ai-client';
+import { THEME_OPTIONS, DEFAULT_THEME_ID, applyThemeClass, isThemeId, type ThemeId } from '../lib/themes';
 
 // Check every semicolon-separated statement, not just the first
 function detectAnyDestructive(sql: string): DestructiveOp | null {
@@ -125,7 +117,8 @@ export interface AIChatMessage {
 
 interface AppState {
   // Theme
-  theme: 'light' | 'dark';
+  theme: ThemeId;
+  setTheme: (id: ThemeId) => void;
 
   // GitHub
   githubToken: string;
@@ -329,7 +322,12 @@ async function removeToken(key: string): Promise<void> {
 
 export const useAppStore = create<AppState>((set, get) => ({
   // Theme starts dark; initApp() will overwrite it from SQLite app_settings
-  theme: 'dark',
+  theme: DEFAULT_THEME_ID,
+  setTheme: (id) => set(() => {
+    api.appUpdateSettings({ theme: id }).catch(() => {});
+    applyThemeClass(id);
+    return { theme: id };
+  }),
   githubToken: '',
   setGithubToken: async (token: string) => {
     if (token) await storeToken('valstine-github-token', token);
@@ -438,9 +436,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   aiThinking: false,
 
   toggleTheme: () => set((s) => {
-    const next = s.theme === 'dark' ? 'light' : 'dark';
+    const ids = THEME_OPTIONS.map((t) => t.id);
+    const next = ids[(ids.indexOf(s.theme) + 1) % ids.length];
     api.appUpdateSettings({ theme: next }).catch(() => {});
-    document.documentElement.classList.toggle('dark', next === 'dark');
+    applyThemeClass(next);
     return { theme: next };
   }),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -1047,10 +1046,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...(rawSettings.accounts ?? {}),
         },
       };
-      const theme: 'light' | 'dark' = rawSettings.theme === 'light' ? 'light' : 'dark';
+      const theme: ThemeId = isThemeId(rawSettings.theme) ? rawSettings.theme : DEFAULT_THEME_ID;
       const isFirstTime = !rawSettings.onboarded;
       const hasCompletedTour = !!rawSettings.tourDone;
-      document.documentElement.classList.toggle('dark', theme === 'dark');
+      applyThemeClass(theme);
 
       // Determine the first previously-connected connection to make active
       const prevActive = connections.find((c) => c.status === 'connected');

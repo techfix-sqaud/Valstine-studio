@@ -25,6 +25,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { useAppStore } from "@valstine/core/store/app-store";
+import { isDarkTheme, applyThemeClass } from "@valstine/core/lib/themes";
 
 function detectPlatform(): "mac" | "windows" | "linux" | "unknown" {
   const ua = navigator.userAgent.toLowerCase();
@@ -914,7 +915,7 @@ export default function Landing() {
   const navigate = useNavigate();
   const { completeOnboarding, isFirstTime, theme, toggleTheme } = useAppStore();
   const platform = detectPlatform();
-  const isDark = theme === "dark";
+  const isDark = isDarkTheme(theme);
   // When running inside the Electron shell the user already has the app installed.
   // Download buttons must never open GitHub in the external browser.
   const isElectron =
@@ -993,8 +994,8 @@ export default function Landing() {
   const accentTextClass = "text-[color:var(--landing-accent)]";
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", isDark);
-  }, [isDark]);
+    applyThemeClass(theme);
+  }, [theme]);
 
   useEffect(() => {
     // In Electron the user already has the app — download buttons are hidden and

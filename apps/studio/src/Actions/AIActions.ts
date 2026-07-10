@@ -1,15 +1,14 @@
 import { QuickAction } from "@/types/AI";
 import { BookOpen, Bug, FileText, Search, TrendingUp, Zap } from "lucide-react";
 import { AIagentAPIClientInstance } from "@/Helpers/apis";
+import { setAiChatTransport, type AIChatMessage } from "@valstine/core/lib/ai-client";
 
-export interface AIChatMessage {
-  role: string;
-  content: string;
-}
+export type { AIChatMessage };
 
-export async function sendAiChat(
-  messages: AIChatMessage[],
-): Promise<{ ok: boolean; content?: string; error?: string }> {
+// Registers Studio's configured API client (runtime-authenticated, session-
+// aware) as the AI transport used by the shared store and SQL optimizer in
+// @valstine/core — overriding the plain build-time-token fetch default.
+setAiChatTransport(async (messages) => {
   const response = await AIagentAPIClientInstance.post("", {
     model: "n/a",
     messages,
@@ -18,7 +17,7 @@ export async function sendAiChat(
   const content: string =
     response.data?.choices?.[0]?.message?.content ?? "No response from AI agent.";
   return { ok: true, content };
-}
+});
 
 export const QUICK_ACTIONS: QuickAction[] = [
   {

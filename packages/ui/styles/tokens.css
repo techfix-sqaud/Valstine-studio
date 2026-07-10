@@ -63,7 +63,23 @@
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   }
 
-  .dark {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    font-size: 13px;
+  }
+}
+
+/* NOTE: `.dark` / `.dark.theme-black` are intentionally NOT inside `@layer
+   base` — Tailwind (this project's 3.4.17 install) silently drops
+   class-selector rules nested in its built-in base/components layers while
+   `:root` survives (reproduced in isolation, unrelated to selector content).
+   Left unlayered here, which cascade layers rules put ahead of any @layer
+   content anyway, so the override still applies correctly. */
+.dark {
     --background: 221 47% 10%;
     --foreground: 213 56% 96%;
 
@@ -120,17 +136,61 @@
     --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   }
-}
 
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground;
-    font-family: var(--font-sans);
-    font-size: 13px;
-  }
+  /* Black (Space Gray) — matches VS Code's "Dark Modern" tone family: a
+     single cohesive near-black (editor ~#1f1f1f, chrome ~#181818) instead of
+     a patchwork of unrelated near-black shades. Layered on top of .dark. */
+  .dark.theme-black {
+    --background: 0 0% 12%;
+    --foreground: 0 0% 88%;
+
+    --card: 0 0% 12%;
+    --card-foreground: 0 0% 88%;
+
+    --popover: 0 0% 12%;
+    --popover-foreground: 0 0% 88%;
+
+    --primary: 217 83% 58%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 16%;
+    --secondary-foreground: 0 0% 82%;
+
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 62%;
+
+    --accent: 0 0% 18%;
+    --accent-foreground: 0 0% 90%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 217 83% 58%;
+
+    --sidebar-bg: 0 0% 9%;
+    --sidebar-fg: 0 0% 73%;
+    --sidebar-hover: 0 0% 15%;
+    --sidebar-active: 217 83% 58%;
+    --sidebar-border: 0 0% 16%;
+
+    --titlebar: 0 0% 9%;
+    --titlebar-fg: 0 0% 70%;
+
+    --tab-active: 0 0% 12%;
+    --tab-inactive: 0 0% 9%;
+    --tab-border: 0 0% 16%;
+
+    --panel-bg: 0 0% 9%;
+    --panel-border: 0 0% 16%;
+
+    --statusbar: 0 0% 9%;
+    --statusbar-fg: 0 0% 73%;
+
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
+    --info: 217 83% 58%;
 }
 
 /* Custom scrollbar */
@@ -153,6 +213,10 @@
 .dark .monaco-editor .margin,
 .dark .monaco-editor .monaco-editor-background {
   background-color: hsl(220 13% 15%) !important;
+}
+.dark.theme-black .monaco-editor .margin,
+.dark.theme-black .monaco-editor .monaco-editor-background {
+  background-color: #1f1f1f !important;
 }
 .monaco-editor .margin,
 .monaco-editor .monaco-editor-background {

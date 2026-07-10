@@ -10,8 +10,8 @@ import {
   Check,
   Wrench,
 } from "lucide-react";
-import type { ImpactReport, DDLRisk } from "@/lib/impact-analysis";
-import { cn } from "@/lib/utils";
+import type { ImpactReport, DDLRisk } from "@valstine/core/lib/impact-analysis";
+import { cn } from "@valstine/ui/lib/utils";
 
 // ── Risk configuration ────────────────────────────────────────────────────
 

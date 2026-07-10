@@ -12,9 +12,9 @@ import {
   ChevronRight,
   Eraser,
 } from 'lucide-react';
-import type { RecycleBinEntry } from '@/lib/sql-optimizer';
-import { useAppStore } from '@/store/app-store';
-import { cn } from '@/lib/utils';
+import type { RecycleBinEntry } from '@valstine/core/lib/sql-optimizer';
+import { useAppStore } from '@valstine/core/store/app-store';
+import { cn } from '@valstine/ui/lib/utils';
 
 const ACTION_CONFIG = {
   DROP_TABLE: {

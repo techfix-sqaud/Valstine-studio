@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback } from "react";
 import { Edit3, Save, X, Check, AlertTriangle } from "lucide-react";
 import { useSchemaCache } from "@/hooks/use-schema-cache";
-import { useAppStore } from "@/store/app-store";
-import * as api from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { useAppStore } from "@valstine/core/store/app-store";
+import * as api from "@valstine/core/lib/api";
+import { cn } from "@valstine/ui/lib/utils";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

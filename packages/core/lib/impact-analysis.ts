@@ -1,4 +1,4 @@
-import type { QueryHistoryEntry } from '@/store/app-store';
+import { QueryHistoryEntry } from "../store/app-store";
 
 export type DDLRisk = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 

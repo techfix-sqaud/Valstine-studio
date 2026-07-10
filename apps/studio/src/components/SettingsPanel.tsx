@@ -7,8 +7,6 @@ import {
   Info,
   Cloud,
   ChevronRight,
-  Sun,
-  Moon,
   AlertTriangle,
   Bot,
   Eye,
@@ -20,18 +18,32 @@ import {
   LoaderCircle,
   RefreshCw,
 } from "lucide-react";
-<<<<<<< HEAD
-import { cn } from "@/lib/utils";
-import { useAppStore, type AccountAuthProvider } from "@/store/app-store";
-import { TERMINAL_PRESETS, getPresetById } from "@/lib/terminal-themes";
-import { getSourceControlProviderLabel } from "@/lib/source-control";
-import { AI_AGENT_URL } from "@/Helpers/apis";
-=======
 import { cn } from "@valstine/ui/lib/utils";
-import { useAppStore, type AccountAuthProvider } from "@valstine/core/store/app-store";
-import { TERMINAL_PRESETS, getPresetById } from "@valstine/core/lib/terminal-themes";
+import {
+  useAppStore,
+  type AccountAuthProvider,
+} from "@valstine/core/store/app-store";
+import {
+  TERMINAL_PRESETS,
+  getPresetById,
+} from "@valstine/core/lib/terminal-themes";
 import { getSourceControlProviderLabel } from "@valstine/core/lib/source-control";
->>>>>>> 3195621 (feat(core): refactor import paths to relative in source-control and app-store modules)
+import { AI_AGENT_URL } from "@/Helpers/apis";
+import { THEME_OPTIONS } from "@valstine/core/lib/themes";
+
+const rawVersion =
+  typeof window !== "undefined"
+    ? ((window as any)?.GITHUB_RELEASE_VERSION ??
+      (window as any)?.APP_VERSION ??
+      (window as any)?.VITE_APP_VERSION)
+    : undefined;
+
+const VERSION =
+  (typeof rawVersion === "string"
+    ? rawVersion.replace(/^v/, "")
+    : rawVersion) ??
+  (import.meta as any)?.env?.VITE_APP_VERSION ??
+  "0.0.0";
 
 type Section =
   | "general"
@@ -188,7 +200,7 @@ function TerminalPreview({
 
 // ── Sections ───────────────────────────────────────────────────
 function GeneralSection() {
-  const { theme, toggleTheme } = useAppStore();
+  const { theme, setTheme } = useAppStore();
   const [updateStatus, setUpdateStatus] = useState<{
     tone: "idle" | "checking" | "success" | "error";
     message: string;
@@ -270,24 +282,36 @@ function GeneralSection() {
         <h3 className="text-xs font-semibold text-foreground mb-3">
           Appearance
         </h3>
-        <div className="flex items-center justify-between py-2 border-b border-panel-border/50">
-          <div>
-            <div className="text-xs text-foreground">Color Theme</div>
-            <div className="text-[11px] text-muted-foreground">
-              Switch between dark and light mode
-            </div>
+        <div className="py-2 border-b border-panel-border/50">
+          <div className="text-xs text-foreground mb-0.5">Color Theme</div>
+          <div className="text-[11px] text-muted-foreground mb-3">
+            Choose the color theme used across Studio and Analyst OS.
           </div>
-          <button
-            onClick={toggleTheme}
-            className="flex items-center gap-2 px-3 py-1.5 rounded border border-panel-border text-xs text-foreground hover:bg-secondary transition-colors"
-          >
-            {theme === "dark" ? (
-              <Moon className="w-3.5 h-3.5" />
-            ) : (
-              <Sun className="w-3.5 h-3.5" />
-            )}
-            {theme === "dark" ? "Dark" : "Light"}
-          </button>
+          <div className="grid grid-cols-3 gap-1.5">
+            {THEME_OPTIONS.map((opt) => {
+              const isActive = theme === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => setTheme(opt.id as any)}
+                  className={cn(
+                    "flex flex-col items-start gap-1.5 p-2 rounded border text-left transition-colors",
+                    isActive
+                      ? "border-primary bg-primary/10"
+                      : "border-panel-border hover:border-primary/40",
+                  )}
+                >
+                  <div
+                    className="w-full h-6 rounded"
+                    style={{
+                      background: `linear-gradient(135deg, ${opt.swatch.bg} 50%, ${opt.swatch.panel} 50%)`,
+                    }}
+                  />
+                  <span className="text-[11px] text-foreground">{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -753,7 +777,7 @@ function AboutSection() {
         <div className="space-y-1 text-xs text-muted-foreground">
           <div className="flex justify-between py-1 border-b border-panel-border/30">
             <span>Version</span>
-            <span className="text-foreground font-mono">0.1.0</span>
+            <span className="text-foreground font-mono">{VERSION}</span>
           </div>
           <div className="flex justify-between py-1 border-b border-panel-border/30">
             <span>Runtime</span>

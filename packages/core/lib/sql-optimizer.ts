@@ -1,4 +1,4 @@
-import { sendAiChat } from '@/Actions/AIActions';
+import { sendAiChat } from './ai-client';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

@@ -15,7 +15,7 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "dev": "bun run dev:studio",
+    "dev": "concurrently \"SERVER_PORT=3001 bun run apps/studio/server/index.ts\" \"cd apps/studio && vite\" \"bun run dev:analyst-os\"",
     "dev:studio": "concurrently \"SERVER_PORT=3001 bun run apps/studio/server/index.ts\" \"cd apps/studio && vite\"",
     "dev:analyst-os": "bun run --cwd apps/analyst-os dev",
     "dev:front": "cd apps/studio && vite",

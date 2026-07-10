@@ -11,8 +11,8 @@ import {
   Zap,
   ShieldAlert,
 } from 'lucide-react';
-import type { SqlOptimizerResult } from '@/lib/sql-optimizer';
-import { cn } from '@/lib/utils';
+import type { SqlOptimizerResult } from '@valstine/core/lib/sql-optimizer';
+import { cn } from '@valstine/ui/lib/utils';
 
 interface Props {
   result: SqlOptimizerResult;

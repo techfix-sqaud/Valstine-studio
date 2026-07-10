@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Sparkles, Send } from "lucide-react";
 import { cn } from "@valstine/ui/lib/utils";
 import { useAppStore } from "@valstine/core/store/app-store";
+import { applyThemeClass } from "@valstine/core/lib/themes";
 import { ApiGenerator } from "@/components/ApiGenerator";
 import { ApiTester } from "@/components/ApiTester";
 
@@ -19,7 +20,7 @@ export default function ApiWorkspace() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("generator");
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
+    applyThemeClass(theme);
   }, [theme]);
 
   return (
