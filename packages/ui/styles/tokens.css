@@ -1,0 +1,294 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 214 60% 97%;
+    --foreground: 221 47% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 221 47% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 221 47% 15%;
+
+    --primary: 219 71% 36%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 214 54% 93%;
+    --secondary-foreground: 218 42% 28%;
+
+    --muted: 214 44% 94%;
+    --muted-foreground: 217 24% 42%;
+
+    --accent: 213 56% 91%;
+    --accent-foreground: 221 47% 18%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 33% 83%;
+    --input: 214 33% 83%;
+    --ring: 219 71% 36%;
+
+    --radius: 0.375rem;
+
+    --sidebar-bg: 214 58% 96%;
+    --sidebar-fg: 218 35% 32%;
+    --sidebar-hover: 214 50% 92%;
+    --sidebar-active: 219 71% 36%;
+    --sidebar-border: 214 32% 86%;
+
+    --titlebar: 214 50% 95%;
+    --titlebar-fg: 218 35% 32%;
+
+    --tab-active: 0 0% 100%;
+    --tab-inactive: 214 46% 95%;
+    --tab-border: 214 32% 86%;
+
+    --panel-bg: 214 56% 96%;
+    --panel-border: 214 32% 86%;
+
+    --statusbar: 219 71% 36%;
+    --statusbar-fg: 0 0% 100%;
+
+    --success: 142 71% 35%;
+    --warning: 38 92% 45%;
+    --info: 217 76% 46%;
+
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    font-size: 13px;
+  }
+}
+
+/* NOTE: `.dark` / `.dark.theme-black` are intentionally NOT inside `@layer
+   base` — Tailwind (this project's 3.4.17 install) silently drops
+   class-selector rules nested in its built-in base/components layers while
+   `:root` survives (reproduced in isolation, unrelated to selector content).
+   Left unlayered here, which cascade layers rules put ahead of any @layer
+   content anyway, so the override still applies correctly. */
+.dark {
+    --background: 221 47% 10%;
+    --foreground: 213 56% 96%;
+
+    --card: 221 43% 12%;
+    --card-foreground: 213 56% 96%;
+
+    --popover: 222 44% 11%;
+    --popover-foreground: 213 56% 96%;
+
+    --primary: 217 83% 58%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 31% 18%;
+    --secondary-foreground: 214 35% 82%;
+
+    --muted: 221 30% 17%;
+    --muted-foreground: 217 23% 64%;
+
+    --accent: 220 34% 20%;
+    --accent-foreground: 214 50% 92%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 28% 22%;
+    --input: 220 28% 22%;
+    --ring: 217 83% 58%;
+
+    --radius: 0.375rem;
+
+    --sidebar-bg: 222 44% 11%;
+    --sidebar-fg: 215 32% 76%;
+    --sidebar-hover: 221 34% 17%;
+    --sidebar-active: 217 83% 58%;
+    --sidebar-border: 220 28% 20%;
+
+    --titlebar: 222 47% 9%;
+    --titlebar-fg: 215 30% 74%;
+
+    --tab-active: 221 36% 16%;
+    --tab-inactive: 221 36% 12%;
+    --tab-border: 220 28% 20%;
+
+    --panel-bg: 222 40% 11%;
+    --panel-border: 220 28% 20%;
+
+    --statusbar: 219 70% 34%;
+    --statusbar-fg: 0 0% 100%;
+
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
+    --info: 217 83% 58%;
+
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  /* Black (Space Gray) — matches VS Code's "Dark Modern" tone family: a
+     single cohesive near-black (editor ~#1f1f1f, chrome ~#181818) instead of
+     a patchwork of unrelated near-black shades. Layered on top of .dark. */
+  .dark.theme-black {
+    --background: 0 0% 12%;
+    --foreground: 0 0% 88%;
+
+    --card: 0 0% 12%;
+    --card-foreground: 0 0% 88%;
+
+    --popover: 0 0% 12%;
+    --popover-foreground: 0 0% 88%;
+
+    --primary: 217 83% 58%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 16%;
+    --secondary-foreground: 0 0% 82%;
+
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 62%;
+
+    --accent: 0 0% 18%;
+    --accent-foreground: 0 0% 90%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 217 83% 58%;
+
+    --sidebar-bg: 0 0% 9%;
+    --sidebar-fg: 0 0% 73%;
+    --sidebar-hover: 0 0% 15%;
+    --sidebar-active: 217 83% 58%;
+    --sidebar-border: 0 0% 16%;
+
+    --titlebar: 0 0% 9%;
+    --titlebar-fg: 0 0% 70%;
+
+    --tab-active: 0 0% 12%;
+    --tab-inactive: 0 0% 9%;
+    --tab-border: 0 0% 16%;
+
+    --panel-bg: 0 0% 9%;
+    --panel-border: 0 0% 16%;
+
+    --statusbar: 0 0% 9%;
+    --statusbar-fg: 0 0% 73%;
+
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
+    --info: 217 83% 58%;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(220 13% 30%);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(220 13% 40%);
+}
+
+/* Monaco overrides */
+.dark .monaco-editor .margin,
+.dark .monaco-editor .monaco-editor-background {
+  background-color: hsl(220 13% 15%) !important;
+}
+.dark.theme-black .monaco-editor .margin,
+.dark.theme-black .monaco-editor .monaco-editor-background {
+  background-color: #1f1f1f !important;
+}
+.monaco-editor .margin,
+.monaco-editor .monaco-editor-background {
+  background-color: hsl(0 0% 97%) !important;
+}
+
+/* Resizable panel separators */
+[data-separator] {
+  background: hsl(var(--panel-border));
+  transition: background 150ms;
+  flex-shrink: 0;
+}
+[data-separator][aria-orientation="horizontal"] {
+  min-height: 3px;
+  cursor: row-resize;
+}
+[data-separator][aria-orientation="vertical"] {
+  min-width: 3px;
+  cursor: col-resize;
+}
+[data-separator]:hover,
+[data-separator][data-separator="drag"] {
+  background: hsl(var(--primary));
+}
+
+/* Tree item animation */
+.tree-item {
+  transition: background 100ms ease;
+}
+.tree-item:hover {
+  background: hsl(var(--sidebar-hover));
+}
+
+/* Command palette */
+[cmdk-root] {
+  font-family: var(--font-sans);
+}
+[cmdk-input] {
+  font-family: var(--font-sans);
+}
+
+/* Utility: hide scrollbar */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Responsive touch targets */
+@media (pointer: coarse) {
+  .tree-item {
+    min-height: 36px;
+  }
+}
+
+/* Smooth page transitions */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.animate-fade-in {
+  animation: fade-in 300ms ease-out;
+}
+
+.animate-slide-down {
+  animation: slide-down 200ms ease-out;
+}

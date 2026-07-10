@@ -3,6 +3,14 @@ name: Release Production
 on:
   push:
     branches: [main]
+    paths:
+      - "apps/studio/**"
+      - "packages/ui/**"
+      - "packages/core/**"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig.base.json"
+      - ".github/workflows/release-production.yml"
 
 permissions:
   contents: write

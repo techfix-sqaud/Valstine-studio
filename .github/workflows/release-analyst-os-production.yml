@@ -1,0 +1,99 @@
+name: Release Analyst OS Production
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/analyst-os/**"
+      - "packages/ui/**"
+      - "packages/core/**"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig.base.json"
+      - ".github/workflows/release-analyst-os-production.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Calculate the next patch version from analyst-os-v* git tags and ──
+  # tag + release it. Versioned independently from Studio: the major.minor
+  # base comes from apps/analyst-os/package.json, and tags are analyst-os-v*,
+  # so changes to one app never bump or release the other.
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate next version
+        id: meta
+        run: |
+          BASE=$(node -p "require('./apps/analyst-os/package.json').version" | awk -F. '{print $1"."$2}')
+
+          ESCAPED=$(echo "$BASE" | sed 's/\./\\./g')
+          LATEST=$(git tag --sort=-v:refname | grep -E "^analyst-os-v${ESCAPED}\.[0-9]+$" | head -1)
+
+          if [ -z "$LATEST" ]; then
+            PATCH=0
+          else
+            PATCH=$(echo "$LATEST" | awk -F. '{print $3}')
+            PATCH=$((PATCH + 1))
+          fi
+
+          VERSION="${BASE}.${PATCH}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=analyst-os-v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Releasing: analyst-os-v${VERSION}"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-v:refname | grep '^analyst-os-v' | grep -vE '\-dev\.' | head -1)
+          if [ -z "$PREV_TAG" ]; then
+            RANGE="HEAD"
+          else
+            RANGE="${PREV_TAG}..HEAD"
+          fi
+
+          FEATURES=$(git log $RANGE --pretty=format:"%s" --no-merges -- apps/analyst-os packages/ui packages/core \
+            | grep -E "^feat" | sed 's/^feat[^:]*: //' | sed 's/^/- /' | head -20 || true)
+          FIXES=$(git log $RANGE --pretty=format:"%s" --no-merges -- apps/analyst-os packages/ui packages/core \
+            | grep -E "^fix" | sed 's/^fix[^:]*: //' | sed 's/^/- /' | head -20 || true)
+          IMPROVEMENTS=$(git log $RANGE --pretty=format:"%s" --no-merges -- apps/analyst-os packages/ui packages/core \
+            | grep -E "^(refactor|perf|improve)" | sed 's/^[^:]*: //' | sed 's/^/- /' | head -10 || true)
+
+          {
+            echo "body<<CHANGELOG_EOF"
+            if [ -n "$FEATURES" ]; then
+              echo "### ✨ New Features"
+              echo "$FEATURES"
+              echo ""
+            fi
+            if [ -n "$FIXES" ]; then
+              echo "### 🐛 Bug Fixes"
+              echo "$FIXES"
+              echo ""
+            fi
+            if [ -n "$IMPROVEMENTS" ]; then
+              echo "### ⚡ Improvements"
+              echo "$IMPROVEMENTS"
+              echo ""
+            fi
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create tag and release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git tag "${{ steps.meta.outputs.tag }}"
+          git push origin "${{ steps.meta.outputs.tag }}"
+
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            --title "Valstine Analyst OS ${{ steps.meta.outputs.tag }}" \
+            --latest=false \
+            --notes "## Valstine Analyst OS ${{ steps.meta.outputs.tag }}
+
+          ${{ steps.changelog.outputs.body }}"

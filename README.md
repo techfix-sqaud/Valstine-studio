@@ -37,7 +37,18 @@ Download the latest release for your platform:
 
 ## Development
 
-Clone the repo and install dependencies:
+This is a Bun-workspaces monorepo:
+
+```
+apps/
+  studio/       # the database IDE (this product) — Electron + web, keeps its own server/
+  analyst-os/   # Valstine Analyst OS — web-only BI workbench
+packages/
+  ui/           # shared shadcn-based design system (@valstine/ui)
+  core/         # shared state/API client/connection UI (@valstine/core)
+```
+
+Clone the repo and install dependencies (installs both apps' dependencies):
 
 ```bash
 git clone https://github.com/techfix-sqaud/Valstine-studio.git
@@ -45,11 +56,19 @@ cd Valstine-studio
 bun install
 ```
 
-To start the development server:
+To start Studio's dev server (frontend + backend):
 
 ```bash
-bun run dev
+bun run dev:studio
 ```
+
+To start Analyst OS's dev server (talks to the same backend via a dev proxy):
+
+```bash
+bun run dev:analyst-os
+```
+
+`bun run dev` is an alias for `bun run dev:studio`. `bun run build` builds both apps; use `bun run build:studio` / `bun run build:analyst-os` to build just one.
 
 ## Contributing
 
