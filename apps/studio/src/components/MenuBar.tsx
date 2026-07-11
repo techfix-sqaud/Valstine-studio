@@ -70,10 +70,10 @@ function useMenus(): MenuDef[] {
         { label: "separator", separator: true },
         { label: "Open Schema Diagram", action: openSchemaTab },
         { label: "separator", separator: true },
-        {
-          label: "New Connection...",
-          action: () => openConnectionDialog(),
-        },
+        // {
+        //   label: "New Connection...",
+        //   action: () => openConnectionDialog(),
+        // },
         { label: "separator", separator: true },
         {
           label: "Preferences",
@@ -161,15 +161,24 @@ function useMenus(): MenuDef[] {
         { label: "separator", separator: true },
         {
           label: "Results",
-          action: () => { setActiveBottomTab("results"); setBottomPanelVisible(true); },
+          action: () => {
+            setActiveBottomTab("results");
+            setBottomPanelVisible(true);
+          },
         },
         {
           label: "Query History",
-          action: () => { setActiveBottomTab("history"); setBottomPanelVisible(true); },
+          action: () => {
+            setActiveBottomTab("history");
+            setBottomPanelVisible(true);
+          },
         },
         {
           label: "Chart",
-          action: () => { setActiveBottomTab("chart"); setBottomPanelVisible(true); },
+          action: () => {
+            setActiveBottomTab("chart");
+            setBottomPanelVisible(true);
+          },
         },
         { label: "separator", separator: true },
         { label: "Toggle Theme", action: toggleTheme },
@@ -196,7 +205,8 @@ function useMenus(): MenuDef[] {
         },
         {
           label: "Connections",
-          action: () => useAppStore.getState().setActiveSidebarTab("connections"),
+          action: () =>
+            useAppStore.getState().setActiveSidebarTab("connections"),
         },
         {
           label: "AI Chat",
@@ -225,7 +235,10 @@ function useMenus(): MenuDef[] {
             const model = ed?.getModel();
             if (sel && model && !sel.isEmpty()) {
               const text = model.getValueInRange(sel).trim();
-              if (text) { runQuery(text); return; }
+              if (text) {
+                runQuery(text);
+                return;
+              }
             }
             executeQuery();
           },
@@ -244,7 +257,9 @@ function useMenus(): MenuDef[] {
             const sql = model?.getValue()?.trim();
             if (!sql) return;
             // Trigger the EditorToolbar explain by dispatching a custom event
-            window.dispatchEvent(new CustomEvent("valstine:explain", { detail: { sql } }));
+            window.dispatchEvent(
+              new CustomEvent("valstine:explain", { detail: { sql } }),
+            );
           },
         },
         {
@@ -306,7 +321,8 @@ function useMenus(): MenuDef[] {
       items: [
         {
           label: "Documentation",
-          action: () => window.open("https://docs.valstinestudio.com", "_blank"),
+          action: () =>
+            window.open("https://docs.valstinestudio.com", "_blank"),
         },
         {
           label: "Keyboard Shortcuts",

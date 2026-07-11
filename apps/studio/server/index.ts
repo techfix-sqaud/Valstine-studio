@@ -90,6 +90,27 @@ appDb.run(`CREATE TABLE IF NOT EXISTS connections (
 // Migrate existing databases that don't have these columns yet
 try { appDb.run(`ALTER TABLE connections ADD COLUMN ssl_reject_unauthorized INTEGER DEFAULT 1`); } catch { /* already exists */ }
 try { appDb.run(`ALTER TABLE connections ADD COLUMN color TEXT`); } catch { /* already exists */ }
+// `extra` holds a JSON blob of type-specific fields that don't have their own column
+// (Cassandra contactPoints/localDataCenter, isProduction, and the NoSQL fields
+// connectionString/dbIndex/serviceAccountJson/projectId) — a single generic column
+// instead of adding a new one every time a DB type needs another field.
+try { appDb.run(`ALTER TABLE connections ADD COLUMN extra TEXT`); } catch { /* already exists */ }
+
+// Fields persisted in the generic `extra` JSON blob (undefined values are omitted).
+const EXTRA_FIELDS = ['contactPoints', 'localDataCenter', 'isProduction', 'connectionString', 'dbIndex', 'serviceAccountJson', 'projectId'] as const;
+
+function packExtra(conn: any): string {
+  const extra: Record<string, unknown> = {};
+  for (const key of EXTRA_FIELDS) {
+    if (conn[key] !== undefined) extra[key] = conn[key];
+  }
+  return JSON.stringify(extra);
+}
+
+function unpackExtra(raw: string | null | undefined): Record<string, unknown> {
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch { return {}; }
+}
 
 appDb.run(`CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
@@ -167,6 +188,7 @@ function resolveConnection(body: { connectionId?: string; connection?: Connectio
       filename: row.filename ?? undefined,
       ssl: row.ssl === 1,
       sslRejectUnauthorized: row.ssl_reject_unauthorized !== 0,
+      ...unpackExtra(row.extra),
     };
   }
   if (body.connection) return body.connection;
@@ -809,6 +831,7 @@ Bun.serve({
           sslRejectUnauthorized: r.ssl_reject_unauthorized !== 0,
           status: (r.status ?? "disconnected") as "connected" | "disconnected",
           color: r.color ?? undefined,
+          ...unpackExtra(r.extra),
         }));
         return respond({ ok: true, connections });
       }
@@ -819,10 +842,10 @@ Bun.serve({
         if (!conn.id) conn.id = `conn-${Date.now()}`;
         const encPw = conn.password ? encrypt(conn.password, MASTER_KEY) : null;
         appDb.run(
-          `INSERT OR REPLACE INTO connections (id, name, type, host, port, database_name, username, password, filename, ssl, ssl_reject_unauthorized, status, color)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT OR REPLACE INTO connections (id, name, type, host, port, database_name, username, password, filename, ssl, ssl_reject_unauthorized, status, color, extra)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [conn.id, conn.name, conn.type, conn.host ?? null, conn.port ?? null, conn.database,
-           conn.user ?? null, encPw, conn.filename ?? null, conn.ssl ? 1 : 0, conn.sslRejectUnauthorized !== false ? 1 : 0, "disconnected", conn.color ?? null],
+           conn.user ?? null, encPw, conn.filename ?? null, conn.ssl ? 1 : 0, conn.sslRejectUnauthorized !== false ? 1 : 0, "disconnected", conn.color ?? null, packExtra(conn)],
         );
         return respond({ ok: true, id: conn.id });
       }
@@ -838,10 +861,10 @@ Bun.serve({
           ? encrypt(conn.password, MASTER_KEY)
           : (existing?.password ?? null);
         appDb.run(
-          `UPDATE connections SET name=?, type=?, host=?, port=?, database_name=?, username=?, password=?, filename=?, ssl=?, ssl_reject_unauthorized=?, color=?
+          `UPDATE connections SET name=?, type=?, host=?, port=?, database_name=?, username=?, password=?, filename=?, ssl=?, ssl_reject_unauthorized=?, color=?, extra=?
            WHERE id=?`,
           [conn.name, conn.type, conn.host ?? null, conn.port ?? null, conn.database,
-           conn.user ?? null, encPw, conn.filename ?? null, conn.ssl ? 1 : 0, conn.sslRejectUnauthorized !== false ? 1 : 0, conn.color ?? null, id],
+           conn.user ?? null, encPw, conn.filename ?? null, conn.ssl ? 1 : 0, conn.sslRejectUnauthorized !== false ? 1 : 0, conn.color ?? null, packExtra(conn), id],
         );
         return respond({ ok: true });
       }

@@ -23,6 +23,20 @@ function adapterFor(type: DBType) {
   return getAdapter(registry, type);
 }
 
+// Type-specific fields that don't have their own place in the base connection
+// shape (Cassandra contactPoints/localDataCenter, isProduction, and the NoSQL
+// fields connectionString/dbIndex/serviceAccountJson/projectId) — folded into
+// the same encrypted JSON blob as host/port/user/password below.
+const EXTRA_FIELDS = ['contactPoints', 'localDataCenter', 'isProduction', 'connectionString', 'dbIndex', 'serviceAccountJson', 'projectId'] as const;
+
+function pickExtra(conn: any): Record<string, unknown> {
+  const extra: Record<string, unknown> = {};
+  for (const key of EXTRA_FIELDS) {
+    if (conn[key] !== undefined) extra[key] = conn[key];
+  }
+  return extra;
+}
+
 // ── App-State SQLite (per-OS-user, stored in Electron userData) ──────────
 // This provides the same persistence as server/index.ts but scoped to the
 // current OS user account — each user has a completely isolated database.
@@ -157,6 +171,7 @@ function handleAppRequest(method: string, reqPath: string, body: any): unknown {
         ssl: payload.ssl === true,
         sslRejectUnauthorized: payload.sslRejectUnauthorized !== false,
         status: (r.status ?? 'disconnected') as 'connected' | 'disconnected',
+        ...pickExtra(payload),
       };
     });
     return { ok: true, connections };
@@ -175,6 +190,7 @@ function handleAppRequest(method: string, reqPath: string, body: any): unknown {
       filename: conn.filename ?? '',
       ssl: conn.ssl === true,
       sslRejectUnauthorized: conn.sslRejectUnauthorized !== false,
+      ...pickExtra(conn),
     });
     appDb.prepare(
       `INSERT OR REPLACE INTO connections (id, name, type, status, data) VALUES (?, ?, ?, 'disconnected', ?)`
@@ -201,6 +217,7 @@ function handleAppRequest(method: string, reqPath: string, body: any): unknown {
       filename: conn.filename ?? '',
       ssl: conn.ssl === true,
       sslRejectUnauthorized: conn.sslRejectUnauthorized !== false,
+      ...pickExtra(conn),
     });
     appDb.prepare('UPDATE connections SET name=?, type=?, data=? WHERE id=?').run(conn.name, conn.type, encrypt(payload, MASTER_KEY), id);
     return { ok: true };
@@ -333,6 +350,7 @@ function resolveConnection(payload: { connectionId?: string; connection?: Connec
       filename: data.filename || undefined,
       ssl: data.ssl === true,
       sslRejectUnauthorized: data.sslRejectUnauthorized !== false,
+      ...pickExtra(data),
     };
   }
   if (payload.connection) return payload.connection;

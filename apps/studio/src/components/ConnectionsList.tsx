@@ -2,7 +2,7 @@ import { Database, Plug, PlugZap, Plus, HardDriveDownload } from "lucide-react";
 import { cn } from "@valstine/ui/lib/utils";
 import { useAppStore } from "@valstine/core/store/app-store";
 import { showContextMenu } from "./ContextMenu";
-import { DB_TYPE_META } from "@valstine/core/lib/api";
+import { DB_TYPE_META, buildConnectionStringDisplay } from "@valstine/core/lib/api";
 
 export function ConnectionsList() {
   const {
@@ -57,23 +57,36 @@ export function ConnectionsList() {
       <div className="flex-1 overflow-y-auto py-1">
         {connections.map((conn) => {
           const meta = DB_TYPE_META[conn.type];
+          const toggleConnection = async () => {
+            try {
+              if (conn.status === "connected") {
+                await disconnectConnection(conn.id);
+              } else {
+                const r = await connectConnection(conn.id);
+                if (!r.ok) alert(r.error ?? "Failed to connect");
+              }
+            } catch (e: any) {
+              alert(e?.message ?? "Failed to connect");
+            }
+          };
           return (
-            <button
+            <div
               key={conn.id}
+              role="button"
+              tabIndex={0}
               onClick={() => setActiveConnection(conn.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setActiveConnection(conn.id);
+                }
+              }}
               onContextMenu={(e) => {
                 showContextMenu(e, [
                   {
                     label:
                       conn.status === "connected" ? "Disconnect" : "Connect",
-                    action: async () => {
-                      if (conn.status === "connected") {
-                        await disconnectConnection(conn.id);
-                      } else {
-                        const r = await connectConnection(conn.id);
-                        if (!r.ok) alert(r.error ?? "Failed to connect");
-                      }
-                    },
+                    action: toggleConnection,
                   },
                   {
                     label: "Set as Active",
@@ -87,20 +100,7 @@ export function ConnectionsList() {
                   {
                     label: "Copy Connection String",
                     action: () => {
-                      const scheme =
-                        conn.type === "mysql"
-                          ? "mysql"
-                          : conn.type === "mssql"
-                            ? "mssql"
-                            : conn.type === "cassandra"
-                              ? "cassandra"
-                              : "postgresql";
-                      const host = conn.type === "cassandra" ? (conn.contactPoints?.join(",") ?? conn.host) : conn.host;
-                      navigator.clipboard.writeText(
-                        conn.type === "sqlite"
-                          ? (conn.filename ?? conn.database)
-                          : `${scheme}://${conn.user ? conn.user + "@" : ""}${host}:${conn.port}/${conn.database}`,
-                      );
+                      navigator.clipboard.writeText(buildConnectionStringDisplay(conn));
                     },
                   },
                   { separator: true, label: "sep2" },
@@ -162,15 +162,28 @@ export function ConnectionsList() {
                     ? (conn.filename ?? conn.database)
                     : conn.type === "cassandra"
                       ? `${(conn.contactPoints ?? []).join(",") || conn.host}:${conn.port}/${conn.database || "(no keyspace)"}`
-                      : `${conn.host}:${conn.port}/${conn.database}`}
+                      : conn.type === "firebase"
+                        ? (conn.projectId || "(no project id)")
+                        : conn.type === "redis"
+                          ? `${conn.host}:${conn.port}/db${conn.dbIndex ?? 0}`
+                          : `${conn.host}:${conn.port}/${conn.database}`}
                 </span>
               </div>
-              {conn.status === "connected" ? (
-                <PlugZap className="w-3 h-3 text-success ml-auto shrink-0" />
-              ) : (
-                <Plug className="w-3 h-3 text-muted-foreground ml-auto shrink-0" />
-              )}
-            </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleConnection();
+                }}
+                className="ml-auto shrink-0 p-0.5 rounded hover:bg-secondary transition-colors"
+                title={conn.status === "connected" ? "Disconnect" : "Connect"}
+              >
+                {conn.status === "connected" ? (
+                  <PlugZap className="w-3 h-3 text-success" />
+                ) : (
+                  <Plug className="w-3 h-3 text-muted-foreground" />
+                )}
+              </button>
+            </div>
           );
         })}
       </div>

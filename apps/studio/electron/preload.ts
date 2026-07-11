@@ -71,6 +71,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     electron: process.versions.electron,
   },
 
+  // The app's own version (from package.json, stamped at release-build time)
+  // plus whether this is an unpackaged dev run — used by the About page and
+  // the "Check for updates" flow.
+  getAppVersion: (): Promise<{ version: string; isDev: boolean }> =>
+    ipcRenderer.invoke('app:get-version'),
+
   // DB/Git proxy: renderer calls this instead of fetch('/api/*') in Electron
   dbQuery: (action: string, payload: unknown) => {
     const channel = DB_ACTION_MAP[action];

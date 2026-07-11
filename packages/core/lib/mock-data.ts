@@ -1,4 +1,4 @@
-export type DBType = 'pg' | 'mysql' | 'sqlite' | 'mssql' | 'cassandra';
+export type DBType = 'pg' | 'mysql' | 'sqlite' | 'mssql' | 'cassandra' | 'mongodb' | 'firebase' | 'redis';
 
 export interface DBConnection {
   id: string;
@@ -17,6 +17,10 @@ export interface DBConnection {
   isProduction?: boolean; // enables destructive-query safety guard
   contactPoints?: string[]; // Cassandra: comma-separated host list
   localDataCenter?: string; // Cassandra: e.g. "datacenter1"
+  connectionString?: string; // MongoDB/Redis: full URI, overrides host/port when set
+  dbIndex?: number; // Redis: numbered logical database (0-15)
+  serviceAccountJson?: string; // Firebase: pasted service-account JSON key
+  projectId?: string; // Firebase: project id
 }
 
 export interface DBTable {
