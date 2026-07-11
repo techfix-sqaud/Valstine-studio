@@ -50,6 +50,7 @@ export default {
         },
         panel: { bg: "hsl(var(--panel-bg))", border: "hsl(var(--panel-border))" },
         statusbar: { DEFAULT: "hsl(var(--statusbar))", foreground: "hsl(var(--statusbar-fg))" },
+        canvas: "hsl(var(--canvas))",
         success: "hsl(var(--success))",
         warning: "hsl(var(--warning))",
         info: "hsl(var(--info))",

@@ -100,7 +100,7 @@ export function TabBar() {
     <div
       ref={scrollRef}
       onDragLeave={handleDragLeave}
-      className="h-9 bg-tab-inactive flex items-end shrink-0 border-b border-panel-border overflow-x-auto overflow-y-hidden scrollbar-none"
+      className="flex items-center gap-1 shrink-0 overflow-x-auto overflow-y-hidden scrollbar-none px-0.5 py-0.5"
     >
       {tabs.map((tab) => {
         const isSchema = tab.type === "schema";
@@ -123,10 +123,10 @@ export function TabBar() {
             onDrop={(e) => handleDrop(e, tab.id)}
             onDragEnd={handleDragEnd}
             className={cn(
-              "group relative flex items-center gap-1.5 px-3 h-[34px] text-xs border-r border-panel-border transition-colors shrink-0 max-w-[200px] select-none",
+              "group relative flex items-center gap-1.5 px-3 h-8 text-xs rounded-md border transition-colors shrink-0 max-w-[200px] select-none",
               activeTabId === tab.id
-                ? "bg-background text-foreground border-t-2 border-t-primary"
-                : "text-muted-foreground hover:text-foreground hover:bg-secondary/50 border-t-2 border-t-transparent",
+                ? "bg-background text-foreground border-panel-border shadow-sm"
+                : "bg-tab-inactive text-muted-foreground border-transparent hover:text-foreground hover:bg-secondary/50",
               isDragging && "opacity-40",
             )}
           >
@@ -162,7 +162,7 @@ export function TabBar() {
       <button
         onClick={handleNewTab}
         title="New tab"
-        className="flex items-center justify-center w-9 h-[34px] text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors shrink-0"
+        className="flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors shrink-0"
       >
         <Plus className="w-3.5 h-3.5" />
       </button>

@@ -79,8 +79,38 @@ export function registerDbStudioThemes(monaco: typeof Monaco) {
       "editor.selectionHighlightBackground": "#add6ff44",
     },
   });
+
+  monaco.editor.defineTheme("dbstudio-light-modern", {
+    base: "vs",
+    inherit: true,
+    rules: [
+      { token: "keyword", foreground: "0000ff", fontStyle: "bold" },
+      { token: "string", foreground: "a31515" },
+      { token: "number", foreground: "098658" },
+      { token: "comment", foreground: "008000", fontStyle: "italic" },
+      { token: "operator", foreground: "3b3b3b" },
+      { token: "type", foreground: "267f99" },
+    ],
+    colors: {
+      "editor.background": "#ffffff",
+      "editor.foreground": "#3b3b3b",
+      "editorLineNumber.foreground": "#a0a0a0",
+      "editorLineNumber.activeForeground": "#3b3b3b",
+      "editor.selectionBackground": "#cce4fa",
+      "editor.lineHighlightBackground": "#f5f5f5",
+      "editorCursor.foreground": "#005fb8",
+      "editorWhitespace.foreground": "#d4d4d4",
+      "editorIndentGuide.background": "#e5e5e5",
+      "editor.selectionHighlightBackground": "#cce4fa88",
+    },
+  });
 }
 
-export function dbStudioThemeName(theme: string): "dbstudio-dark" | "dbstudio-black" | "dbstudio-light" {
-  return theme === "black" ? "dbstudio-black" : theme === "light" ? "dbstudio-light" : "dbstudio-dark";
+export function dbStudioThemeName(
+  theme: string,
+): "dbstudio-dark" | "dbstudio-black" | "dbstudio-light" | "dbstudio-light-modern" {
+  if (theme === "black") return "dbstudio-black";
+  if (theme === "light") return "dbstudio-light";
+  if (theme === "light-modern") return "dbstudio-light-modern";
+  return "dbstudio-dark";
 }

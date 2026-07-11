@@ -165,52 +165,78 @@ const Index = () => {
     }
   }, [sidebarOpen, isMobile, sidebarPanelRef]);
 
-  // Active tab content area
-  const editorContent = isDashboardTab ? (
-    <div className="h-full w-full">
+  // Active tab content area (rendered above/alongside the results-terminal split, see below)
+  const editorTopContent = isDashboardTab ? (
+    <div className="flex-1 min-h-0 w-full">
       <UsageDashboard />
     </div>
   ) : isDiffTab && activeTab?.diffData ? (
-    <div className="h-full w-full">
+    <div className="flex-1 min-h-0 w-full">
       <SchemaDiffView data={activeTab.diffData} />
     </div>
   ) : isSchemaTab ? (
-    <div className="h-full w-full">
+    <div className="flex-1 min-h-0 w-full">
       <SchemaVisualization />
     </div>
   ) : isApiGeneratorTab ? (
-    <div className="h-full w-full">
+    <div className="flex-1 min-h-0 w-full">
       <ApiGenerator />
     </div>
   ) : isApiTesterTab ? (
-    <div className="h-full w-full">
+    <div className="flex-1 min-h-0 w-full">
       <ApiTester />
     </div>
   ) : (
     <>
       <EditorToolbar />
       <div className="flex-1 min-h-0 min-w-0">
-        {bottomPanelVisible ? (
-          <Group orientation="vertical" id="editor-results" className="h-full">
-            <Panel id="editor-top" defaultSize={60} minSize={20}>
-              <QueryEditor />
-            </Panel>
-            <Separator />
-            <Panel id="results-bottom" defaultSize={40} minSize={10}>
-              <ResultsPanel />
-            </Panel>
-          </Group>
-        ) : (
-          <QueryEditor />
-        )}
+        <QueryEditor />
       </div>
     </>
   );
 
+  // Only the plain SQL-editor tab shows the resizable results/terminal split.
+  const isSplitBranch =
+    !isDashboardTab &&
+    !(isDiffTab && activeTab?.diffData) &&
+    !isSchemaTab &&
+    !isApiGeneratorTab &&
+    !isApiTesterTab;
+  const showBottomSplit = isSplitBranch && bottomPanelVisible;
+
+  // Each tab floats as its own rounded pill (no shared tab-bar card). Editor
+  // and results/terminal each render as their own rounded "card" with a gap
+  // between them (matches the sidebar/editor/terminal floating-panel look).
   const editorArea = (
-    <div className="flex flex-col h-full min-h-0 min-w-0">
+    <div className="flex flex-col h-full min-h-0 min-w-0 gap-1">
       <TabBar />
-      {editorContent}
+      {showBottomSplit ? (
+        <div className="flex-1 min-h-0 min-w-0">
+          <Group orientation="vertical" id="editor-results" className="h-full gap-1">
+            <Panel
+              id="editor-top"
+              defaultSize={60}
+              minSize={20}
+              className="h-full w-full flex flex-col rounded-lg border border-panel-border overflow-hidden shadow-sm"
+            >
+              {editorTopContent}
+            </Panel>
+            <Separator />
+            <Panel
+              id="results-bottom"
+              defaultSize={40}
+              minSize={10}
+              className="h-full w-full rounded-lg border border-panel-border overflow-hidden shadow-sm"
+            >
+              <ResultsPanel />
+            </Panel>
+          </Group>
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 min-w-0 flex flex-col rounded-lg border border-panel-border overflow-hidden shadow-sm">
+          {editorTopContent}
+        </div>
+      )}
     </div>
   );
 
@@ -221,44 +247,46 @@ const Index = () => {
         <div className="flex-1 flex min-h-0 min-w-0 overflow-hidden">
           <ActivityBar />
 
-          {isMobile ? (
-            <>
-              <AppSidebar />
+          {isMobile && <AppSidebar />}
+
+          <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden bg-canvas p-1">
+            {isMobile ? (
               <div className="flex-1 flex flex-col min-h-0 min-w-0">
                 {editorArea}
               </div>
-            </>
-          ) : (
-            <Group
-              orientation="horizontal"
-              id="main-layout"
-              className="flex-1 min-w-0"
-            >
-              <Panel
-                id="sidebar-panel"
-                panelRef={sidebarPanelRef}
-                defaultSize="15%"
-                minSize="12%"
-                maxSize="40%"
-                collapsible
-                collapsedSize={0}
-                onResize={(size) => {
-                  const collapsed = size.asPercentage === 0;
-                  if (collapsed && sidebarOpen) {
-                    setSidebarOpen(false);
-                  } else if (!collapsed && !sidebarOpen) {
-                    setSidebarOpen(true);
-                  }
-                }}
+            ) : (
+              <Group
+                orientation="horizontal"
+                id="main-layout"
+                className="flex-1 min-w-0 gap-1"
               >
-                <AppSidebar />
-              </Panel>
-              <Separator />
-              <Panel id="editor-panel" defaultSize="75%" minSize="30%">
-                {editorArea}
-              </Panel>
-            </Group>
-          )}
+                <Panel
+                  id="sidebar-panel"
+                  panelRef={sidebarPanelRef}
+                  defaultSize="15%"
+                  minSize="12%"
+                  maxSize="40%"
+                  collapsible
+                  collapsedSize={0}
+                  onResize={(size) => {
+                    const collapsed = size.asPercentage === 0;
+                    if (collapsed && sidebarOpen) {
+                      setSidebarOpen(false);
+                    } else if (!collapsed && !sidebarOpen) {
+                      setSidebarOpen(true);
+                    }
+                  }}
+                  className="h-full w-full rounded-lg border border-panel-border overflow-hidden shadow-sm"
+                >
+                  <AppSidebar />
+                </Panel>
+                <Separator />
+                <Panel id="editor-panel" defaultSize="75%" minSize="30%" className="h-full w-full min-w-0">
+                  {editorArea}
+                </Panel>
+              </Group>
+            )}
+          </div>
         </div>
         <StatusBar />
         <CommandPalette />

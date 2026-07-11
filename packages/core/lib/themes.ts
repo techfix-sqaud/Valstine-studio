@@ -2,7 +2,7 @@
 // Adding a new theme: append an entry here, then add matching CSS variable
 // overrides in packages/ui/styles/tokens.css (studio) and the inline
 // `--analyst-*` var maps in the analyst-os workbench components.
-export type ThemeId = "light" | "dark" | "black";
+export type ThemeId = "light" | "light-modern" | "dark" | "black";
 
 export interface ThemeOption {
   id: ThemeId;
@@ -19,6 +19,13 @@ export const THEME_OPTIONS: ThemeOption[] = [
     description: "Default light appearance.",
     mode: "light",
     swatch: { bg: "#ffffff", panel: "#eef3fb", accent: "#1d4ed8" },
+  },
+  {
+    id: "light-modern",
+    label: "Light Modern",
+    description: "Neutral VS Code Light Modern palette.",
+    mode: "light",
+    swatch: { bg: "#ffffff", panel: "#f5f5f5", accent: "#005fb8" },
   },
   {
     id: "dark",
