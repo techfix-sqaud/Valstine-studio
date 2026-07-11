@@ -14,6 +14,34 @@
   "engines": {
     "node": ">=22.0.0"
   },
+  "scripts": {
+    "dev": "concurrently \"SERVER_PORT=3001 bun run apps/studio/server/index.ts\" \"cd apps/studio && vite\" \"bun run dev:analyst-os\"",
+    "dev:studio": "concurrently \"SERVER_PORT=3001 bun run apps/studio/server/index.ts\" \"cd apps/studio && vite\"",
+    "dev:analyst-os": "bun run --cwd apps/analyst-os dev",
+    "dev:front": "cd apps/studio && vite",
+    "server": "SERVER_PORT=3001 bun run apps/studio/server/index.ts",
+    "build": "bun run build:studio && bun run build:analyst-os",
+    "build:studio": "cd apps/studio && vite build",
+    "build:analyst-os": "bun run --cwd apps/analyst-os build",
+    "start": "NODE_ENV=production bun run apps/studio/server/index.ts",
+    "build:dev": "cd apps/studio && vite build --mode development",
+    "lint": "eslint .",
+    "preview": "cd apps/studio && vite preview",
+    "test": "cd apps/studio && vitest run",
+    "test:watch": "cd apps/studio && vitest",
+    "native:rebuild:electron": "bunx electron-rebuild -f -w better-sqlite3 -w node-pty",
+    "electron:tsc": "tsc -p apps/studio/electron/tsconfig.json && cp apps/studio/electron/dist-package.json apps/studio/dist-electron/package.json",
+    "electron:dev": "bun run native:rebuild:electron && concurrently --kill-others-on-fail \"cd apps/studio && vite\" \"bun run electron:start-delayed\"",
+    "electron:start-delayed": "bun run electron:tsc && node -e \"const h=require('http');(function c(){h.get('http://localhost:8080',r=>{if(r.statusCode<500)require('child_process').spawn(require('electron'),['.'],{stdio:'inherit'})}).on('error',()=>setTimeout(c,500))})()\"",
+    "electron:build": "bun run native:rebuild:electron && bun run build:studio && bun run electron:tsc",
+    "electron:dist": "bun run electron:build && electron-builder",
+    "electron:dist:mac": "bun run electron:build && electron-builder --mac",
+    "electron:dist:win": "bun run electron:build && electron-builder --win",
+    "electron:dist:linux": "bun run electron:build && electron-builder --linux",
+    "version:patch": "version=$(bun run apps/studio/scripts/bump-version.mjs patch) && git add package.json && git commit -m \"chore: bump version to $version\"",
+    "version:minor": "version=$(bun run apps/studio/scripts/bump-version.mjs minor) && git add package.json && git commit -m \"chore: bump version to $version\"",
+    "version:major": "version=$(bun run apps/studio/scripts/bump-version.mjs major) && git add package.json && git commit -m \"chore: bump version to $version\""
+  },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
     "@valstine/core": "workspace:*",
@@ -80,5 +108,112 @@
     "vaul": "^0.9.9",
     "zod": "^3.25.76",
     "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
+    "@eslint/js": "^9.32.0",
+    "@playwright/test": "^1.57.0",
+    "@tailwindcss/typography": "^0.5.16",
+    "@testing-library/jest-dom": "^6.6.0",
+    "@testing-library/react": "^16.0.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/bun": "^1.3.11",
+    "@types/node": "^22.16.5",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
+    "@types/tedious": "^18.0.0",
+    "@vitejs/plugin-react-swc": "^3.11.0",
+    "autoprefixer": "^10.4.21",
+    "concurrently": "^8.2.2",
+    "electron": "^33.0.0",
+    "electron-builder": "^26.8.1",
+    "eslint": "^9.32.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^15.15.0",
+    "jsdom": "^20.0.3",
+    "lovable-tagger": "^1.1.13",
+    "png-to-ico": "^3.0.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.38.0",
+    "vite": "^5.4.19",
+    "vitest": "^3.2.4"
+  },
+  "build": {
+    "appId": "com.valstine.studio",
+    "productName": "Valstine Studio",
+    "directories": {
+      "output": "release",
+      "buildResources": "apps/studio/build"
+    },
+    "extraMetadata": {
+      "main": "dist-electron/electron/main.cjs"
+    },
+    "files": [
+      "package.json",
+      {
+        "from": "apps/studio/dist",
+        "to": "dist",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "apps/studio/dist-electron",
+        "to": "dist-electron",
+        "filter": [
+          "**/*"
+        ]
+      },
+      "node_modules/**/*",
+      "!node_modules/.cache/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**/*",
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/@mapbox/node-pre-gyp/**/*"
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "apps/studio/build/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "artifactName": "Valstine-Studio.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "apps/studio/build/entitlements.mac.plist",
+      "entitlementsInherit": "apps/studio/build/entitlements.mac.plist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "apps/studio/build/icon.ico",
+      "artifactName": "Valstine-Studio-Setup.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "apps/studio/build/icon.iconset/icon_512x512.png",
+      "category": "Development",
+      "artifactName": "Valstine-Studio.${ext}",
+      "maintainer": "Valstine Studio <support@valstine.com>"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "techfix-sqaud",
+      "repo": "Valstine-studio"
+    }
   }
 }
