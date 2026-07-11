@@ -43,8 +43,13 @@ export interface ConnectionPayload {
   // load-balancing policy should prefer. `database` doubles as the keyspace name.
   contactPoints?: string[];
   localDataCenter?: string;
-  // Further NoSQL fields land here in Phases 2-4 (connectionString, dbIndex,
-  // serviceAccountJson/projectId) — omitted until those phases.
+  // MongoDB/Redis: full connection URI, overrides host/port/user/password when set.
+  connectionString?: string;
+  // Redis: numbered logical database (0-15).
+  dbIndex?: number;
+  // Firebase: pasted service-account JSON key + the project id it belongs to.
+  serviceAccountJson?: string;
+  projectId?: string;
 }
 
 export interface NormalizedResult {

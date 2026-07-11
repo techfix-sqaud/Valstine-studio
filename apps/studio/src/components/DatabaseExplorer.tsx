@@ -27,7 +27,7 @@ import { cn } from "@valstine/ui/lib/utils";
 import { useAppStore } from "@valstine/core/store/app-store";
 import { showContextMenu } from "./ContextMenu";
 import * as api from "@valstine/core/lib/api";
-import { DB_TYPE_META, DB_TYPE_CAPABILITIES } from "@valstine/core/lib/api";
+import { DB_TYPE_META, DB_TYPE_CAPABILITIES, buildConnectionStringDisplay } from "@valstine/core/lib/api";
 
 // ── Column node ──────────────────────────────────────────────────────────────
 function ColumnItem({ col, tableName }: { col: api.RemoteColumnInfo; tableName: string }) {
@@ -57,6 +57,8 @@ function ColumnItem({ col, tableName }: { col: api.RemoteColumnInfo; tableName: 
             sql = `-- Find references to column "${col.name}" in views, stored procedures, and triggers\nSELECT\n  o.type_desc AS kind,\n  s.name AS schema_name,\n  o.name AS object_name\nFROM sys.sql_modules m\nJOIN sys.objects o ON o.object_id = m.object_id\nJOIN sys.schemas s ON s.schema_id = o.schema_id\nWHERE m.definition LIKE '%${col.name}%'\n  AND o.type IN ('V','P','TR','FN','IF','TF')\nORDER BY o.type_desc, o.name;`;
           } else if (conn.type === "cassandra") {
             sql = `-- Cassandra has no views, functions, or triggers to search — CQL tables are\n-- self-contained. Check application code for references to "${col.name}" instead.`;
+          } else if (conn.type === "mongodb" || conn.type === "redis" || conn.type === "firebase") {
+            sql = `-- ${DB_TYPE_META[conn.type].label} has no views, functions, or triggers to search —\n-- check application code for references to "${col.name}" instead.`;
           } else {
             sql = `-- SQLite: search for "${col.name}" in view definitions\nSELECT 'view' AS kind, name AS object_name, sql AS definition\nFROM sqlite_master\nWHERE type IN ('view','trigger')\n  AND sql LIKE '%${col.name}%'\nORDER BY type, name;`;
           }
@@ -571,8 +573,25 @@ export function DatabaseExplorer() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fetchKey, setFetchKey] = useState(0);
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+
+  const handleConnect = async () => {
+    if (!conn) return;
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      const r = await useAppStore.getState().connectConnection(conn.id);
+      if (!r.ok) setConnectError(r.error ?? "Failed to connect");
+    } catch (e: any) {
+      setConnectError(e?.message ?? "Failed to connect");
+    } finally {
+      setConnecting(false);
+    }
+  };
 
   useEffect(() => {
+    setConnectError(null);
     if (!conn || conn.status !== "connected") { setDatabases([]); return; }
     let cancelled = false;
     setLoading(true); setError(null);
@@ -594,7 +613,7 @@ export function DatabaseExplorer() {
       { separator: true, label: "sep" },
       { label: "Create Database...", action: async () => { const name = prompt("Enter new database name:"); if (!name?.trim() || !conn) return; const r = await api.createDatabase(conn, name.trim()); if (r.ok) setFetchKey((k) => k + 1); else alert(r.error ?? "Failed"); } },
       { separator: true, label: "sep2" },
-      { label: "Copy Connection String", action: () => { const cs = conn.type === "sqlite" ? conn.filename ?? conn.database : `${conn.type}://${conn.user ? conn.user + "@" : ""}${conn.host}:${conn.port}/${conn.database}`; navigator.clipboard.writeText(cs); } },
+      { label: "Copy Connection String", action: () => { navigator.clipboard.writeText(buildConnectionStringDisplay(conn)); } },
       { label: "Push Schema to GitHub →", action: () => { useAppStore.getState().setActiveSidebarTab("git"); } },
       { separator: true, label: "sep3" },
       { label: "Disconnect", action: () => useAppStore.getState().disconnectConnection(conn.id), danger: true },
@@ -629,14 +648,22 @@ export function DatabaseExplorer() {
         <Database className={cn("w-3.5 h-3.5", conn.status === "connected" ? "text-success" : "text-muted-foreground")} />
         <div className="flex flex-col min-w-0">
           <span className="text-xs font-medium text-foreground truncate">{conn.name}</span>
-          <span className="text-[10px] text-muted-foreground truncate">{dbMeta.label} — {conn.database}</span>
+          <span className="text-[10px] text-muted-foreground truncate">{dbMeta.label} — {conn.type === "firebase" ? (conn.projectId || "(no project id)") : conn.database}</span>
         </div>
       </div>
 
       {conn.status !== "connected" && (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 p-4 text-muted-foreground text-xs text-center">
           <span>Connection is disconnected</span>
-          <button onClick={() => useAppStore.getState().connectConnection(conn.id)} className="px-3 py-1 rounded bg-primary/15 text-primary text-[11px] hover:bg-primary/25 transition-colors">Connect</button>
+          <button
+            onClick={handleConnect}
+            disabled={connecting}
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded bg-primary/15 text-primary text-[11px] hover:bg-primary/25 transition-colors disabled:opacity-50"
+          >
+            {connecting && <Loader2 className="w-3 h-3 animate-spin" />}
+            {connecting ? "Connecting..." : "Connect"}
+          </button>
+          {connectError && <span className="text-destructive text-[11px] max-w-[220px]">{connectError}</span>}
         </div>
       )}
 

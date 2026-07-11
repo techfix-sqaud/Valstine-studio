@@ -675,9 +675,10 @@ export function ValstineAnalystOSWorkbench() {
   }, [activeConnection]);
 
   const themeVars = useMemo<CSSProperties>(() => {
-    // light / dark / black(space gray) picker — accent hue stays blue in black mode
+    // light / dark / black(space gray) picker — accent hue stays blue in black mode.
+    // Any non-dark theme (incl. new light variants) resolves to light, not dark.
     const pick = (light: string, dark: string, black: string) =>
-      theme === "black" ? black : theme === "light" ? light : dark;
+      theme === "black" ? black : !isDarkTheme(theme) ? light : dark;
     return {
       "--analyst-bg": pick("#d8e7ff", "#06101f", "#1f1f1f"),
       "--analyst-chrome": pick("#bfd5fb", "#081427", "#181818"),
@@ -2465,7 +2466,7 @@ export function ValstineAnalystOSWorkbench() {
         <div className="h-[calc(100%-45px)] min-h-[340px]">
           <Editor
             language="sql"
-            theme={theme === "black" ? "analystos-black" : theme === "light" ? "analystos-light" : "analystos-dark"}
+            theme={theme === "black" ? "analystos-black" : !isDarkTheme(theme) ? "analystos-light" : "analystos-dark"}
             value={activeTab.content}
             beforeMount={beforeMount}
             onChange={(value) => updateSqlTabContent(activeTab.id, value ?? "")}

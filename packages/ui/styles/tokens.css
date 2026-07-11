@@ -59,6 +59,10 @@
     --warning: 38 92% 45%;
     --info: 217 76% 46%;
 
+    /* Backdrop behind floating panel "cards" (sidebar/editor/terminal) — a shade
+       darker than --panel-bg so the gap between panels reads as a real gap. */
+    --canvas: 214 40% 91%;
+
     --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   }
@@ -133,6 +137,8 @@
     --warning: 38 92% 50%;
     --info: 217 83% 58%;
 
+    --canvas: 222 50% 6%;
+
     --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   }
@@ -191,6 +197,67 @@
     --success: 142 71% 45%;
     --warning: 38 92% 50%;
     --info: 217 83% 58%;
+
+    --canvas: 0 0% 6%;
+}
+
+/* Light Modern — matches VS Code's "Light Modern" default light theme: pure
+   white editor, neutral (non-blue-tinted) gray chrome, muted status bar, and
+   a single blue accent used sparingly. Sits alongside the default (blue-
+   tinted) Light theme rather than replacing it. */
+.theme-light-modern {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 23%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 23%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 23%;
+
+  --primary: 209 100% 36%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 0 0% 95%;
+  --secondary-foreground: 0 0% 25%;
+
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 45%;
+
+  --accent: 209 70% 95%;
+  --accent-foreground: 209 80% 25%;
+
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 0 0% 87%;
+  --input: 0 0% 87%;
+  --ring: 209 100% 36%;
+
+  --sidebar-bg: 0 0% 97%;
+  --sidebar-fg: 0 0% 30%;
+  --sidebar-hover: 0 0% 92%;
+  --sidebar-active: 209 100% 36%;
+  --sidebar-border: 0 0% 87%;
+
+  --titlebar: 0 0% 97%;
+  --titlebar-fg: 0 0% 30%;
+
+  --tab-active: 0 0% 100%;
+  --tab-inactive: 0 0% 93%;
+  --tab-border: 0 0% 87%;
+
+  --panel-bg: 0 0% 97%;
+  --panel-border: 0 0% 87%;
+
+  --statusbar: 0 0% 97%;
+  --statusbar-fg: 0 0% 30%;
+
+  --success: 142 65% 35%;
+  --warning: 38 92% 45%;
+  --info: 209 90% 40%;
+
+  --canvas: 0 0% 90%;
 }
 
 /* Custom scrollbar */
@@ -222,24 +289,28 @@
 .monaco-editor .monaco-editor-background {
   background-color: hsl(0 0% 97%) !important;
 }
+.theme-light-modern .monaco-editor .margin,
+.theme-light-modern .monaco-editor .monaco-editor-background {
+  background-color: #ffffff !important;
+}
 
 /* Resizable panel separators */
 [data-separator] {
-  background: hsl(var(--panel-border));
+  background: transparent;
   transition: background 150ms;
   flex-shrink: 0;
 }
 [data-separator][aria-orientation="horizontal"] {
-  min-height: 3px;
+  min-height: 2px;
   cursor: row-resize;
 }
 [data-separator][aria-orientation="vertical"] {
-  min-width: 3px;
+  min-width: 2px;
   cursor: col-resize;
 }
 [data-separator]:hover,
 [data-separator][data-separator="drag"] {
-  background: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.6);
 }
 
 /* Tree item animation */

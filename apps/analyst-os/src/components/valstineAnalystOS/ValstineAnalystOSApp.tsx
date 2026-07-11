@@ -270,9 +270,10 @@ export function ValstineAnalystOSApp() {
   }, []);
 
   const themeVars = useMemo<CSSProperties>(() => {
-    // light / dark / black(space gray) picker — black falls back to dark when unset
+    // light / dark / black(space gray) picker — any non-dark theme (incl. new light
+    // variants) resolves to the light bucket instead of silently falling to dark.
     const pick = (light: string, dark: string, black: string) =>
-      theme === "black" ? black : theme === "light" ? light : dark;
+      theme === "black" ? black : !isDarkTheme(theme) ? light : dark;
     return {
       "--analyst-bg": pick("#edf3fb", "#0a0d14", "#1f1f1f"),
       "--analyst-chrome": pick("#e4ebf5", "#090d14", "#181818"),

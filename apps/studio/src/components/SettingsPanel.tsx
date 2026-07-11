@@ -31,19 +31,10 @@ import { getSourceControlProviderLabel } from "@valstine/core/lib/source-control
 import { AI_AGENT_URL } from "@/Helpers/apis";
 import { THEME_OPTIONS } from "@valstine/core/lib/themes";
 
-const rawVersion =
-  typeof window !== "undefined"
-    ? ((window as any)?.GITHUB_RELEASE_VERSION ??
-      (window as any)?.APP_VERSION ??
-      (window as any)?.VITE_APP_VERSION)
-    : undefined;
-
-const VERSION =
-  (typeof rawVersion === "string"
-    ? rawVersion.replace(/^v/, "")
-    : rawVersion) ??
-  (import.meta as any)?.env?.VITE_APP_VERSION ??
-  "0.0.0";
+// Non-Electron (web) fallback — injected at build time from the root
+// package.json's `version` field, see apps/studio/vite.config.ts.
+const WEB_FALLBACK_VERSION =
+  (import.meta as any)?.env?.VITE_APP_VERSION ?? "0.0.0";
 
 type Section =
   | "general"
@@ -227,10 +218,12 @@ function GeneralSection() {
       });
     });
 
-    const offAvailable = api.onUpdateAvailable(({ version }) => {
+    const offAvailable = api.onUpdateAvailable(({ version, devInformational }) => {
       setUpdateStatus({
         tone: "success",
-        message: `Version ${version} is available and downloading now.`,
+        message: devInformational
+          ? `Version ${version} is available on GitHub — download it manually; auto-update isn't available for dev builds.`
+          : `Version ${version} is available and downloading now.`,
       });
     });
 
@@ -768,6 +761,21 @@ function CloudSection() {
 }
 
 function AboutSection() {
+  const [version, setVersion] = useState(WEB_FALLBACK_VERSION);
+  const [isDevBuild, setIsDevBuild] = useState(false);
+
+  useEffect(() => {
+    const electronAPI = (window as any).electronAPI;
+    if (!electronAPI?.isElectron) return;
+    electronAPI
+      .getAppVersion()
+      .then(({ version: v, isDev }: { version: string; isDev: boolean }) => {
+        setVersion(v);
+        setIsDevBuild(isDev);
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="space-y-5">
       <div>
@@ -777,7 +785,10 @@ function AboutSection() {
         <div className="space-y-1 text-xs text-muted-foreground">
           <div className="flex justify-between py-1 border-b border-panel-border/30">
             <span>Version</span>
-            <span className="text-foreground font-mono">{VERSION}</span>
+            <span className="text-foreground font-mono">
+              {version}
+              {isDevBuild ? " (dev build)" : ""}
+            </span>
           </div>
           <div className="flex justify-between py-1 border-b border-panel-border/30">
             <span>Runtime</span>

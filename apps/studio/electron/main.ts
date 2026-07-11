@@ -347,6 +347,62 @@ function registerKeychainIPC() {
 
 // ── Auto-Updater ─────────────────────────────────────────────────────────
 
+// Same repo electron-builder publishes to (see root package.json's `build.publish`).
+const GITHUB_REPO = 'techfix-sqaud/Valstine-studio';
+
+async function fetchLatestGithubRelease(): Promise<{ tag: string; version: string } | null> {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=1`, {
+      headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+    });
+    if (!res.ok) return null;
+    const list = (await res.json()) as any[];
+    const tag = list?.[0]?.tag_name;
+    if (!tag) return null;
+    return { tag, version: String(tag).replace(/^v/, '') };
+  } catch {
+    return null;
+  }
+}
+
+// Compares numeric-segment versions (this repo stamps versions like
+// "1.0.0.3-2026-07-10", not strict semver) — splits on '.'/'-', compares each
+// segment as a number, and pads missing trailing segments with 0.
+function isNewerVersion(candidate: string, current: string): boolean {
+  const a = candidate.split(/[.-]/).map((s) => parseInt(s, 10) || 0);
+  const b = current.split(/[.-]/).map((s) => parseInt(s, 10) || 0);
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const av = a[i] ?? 0;
+    const bv = b[i] ?? 0;
+    if (av !== bv) return av > bv;
+  }
+  return false;
+}
+
+// Dev builds can't auto-download/install (electron-updater requires a packaged,
+// signed app with update metadata) — so "check for updates" here just compares
+// against the latest GitHub release and reports back, without downloading.
+async function checkForUpdatesDev() {
+  mainWindow?.webContents.send('updater:checking-for-update');
+  const latest = await fetchLatestGithubRelease();
+  if (!latest) {
+    mainWindow?.webContents.send('updater:error', {
+      message: 'Unable to reach GitHub to check for updates.',
+    });
+    return;
+  }
+  const current = app.getVersion();
+  if (isNewerVersion(latest.version, current)) {
+    mainWindow?.webContents.send('updater:update-available', {
+      version: latest.version,
+      devInformational: true,
+    });
+  } else {
+    mainWindow?.webContents.send('updater:update-not-available');
+  }
+}
+
 function setupAutoUpdater() {
   if (isDev) return;
 
@@ -415,12 +471,19 @@ ipcMain.handle('updater:install', () => {
 });
 
 ipcMain.handle('updater:check', () => {
-  if (!isDev) {
+  if (isDev) {
+    checkForUpdatesDev().catch((err) => {
+      console.error('[updater] dev check failed:', err);
+      mainWindow?.webContents.send('updater:error', { message: err.message ?? String(err) });
+    });
+  } else {
     autoUpdater.checkForUpdates().catch((err) => {
       console.error('[updater] manual check failed:', err);
     });
   }
 });
+
+ipcMain.handle('app:get-version', () => ({ version: app.getVersion(), isDev }));
 
 // ── Window Creation ──────────────────────────────────────────────────────
 

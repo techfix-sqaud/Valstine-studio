@@ -908,11 +908,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   connectConnection: async (id) => {
     const conn = get().connections.find((c) => c.id === id);
     if (!conn) return { ok: false, error: 'Connection not found' };
-    const result = await api.testConnection(conn);
-    if (result.ok) {
-      set((s) => ({ connections: s.connections.map((c) => c.id === id ? { ...c, status: 'connected' as const } : c), activeConnectionId: id }));
+    try {
+      const result = await api.testConnection(conn);
+      if (result.ok) {
+        set((s) => ({ connections: s.connections.map((c) => c.id === id ? { ...c, status: 'connected' as const } : c), activeConnectionId: id }));
+      }
+      return result;
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? String(err) };
     }
-    return result;
   },
   disconnectConnection: async (id) => {
     const conn = get().connections.find((c) => c.id === id);

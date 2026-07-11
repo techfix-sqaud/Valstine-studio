@@ -3,7 +3,7 @@ import { AlertCircle, Download, RefreshCw, X } from "lucide-react";
 
 type UpdateState =
   | { phase: "idle" }
-  | { phase: "available"; version: string }
+  | { phase: "available"; version: string; devInformational?: boolean }
   | { phase: "downloading"; percent: number }
   | { phase: "ready"; version: string }
   | { phase: "error"; message: string };
@@ -14,7 +14,7 @@ declare global {
       onCheckingForUpdate: (cb: () => void) => () => void;
       onUpdateNotAvailable: (cb: () => void) => () => void;
       onUpdateAvailable: (
-        cb: (info: { version: string }) => void,
+        cb: (info: { version: string; devInformational?: boolean }) => void,
       ) => () => void;
       onDownloadProgress: (cb: (p: { percent: number }) => void) => () => void;
       onUpdateDownloaded: (
@@ -44,10 +44,10 @@ export function UpdateNotification() {
       setState((s) => (s.phase === "ready" ? s : { phase: "idle" }));
     });
 
-    const offAvailable = api.onUpdateAvailable(({ version }) => {
+    const offAvailable = api.onUpdateAvailable(({ version, devInformational }) => {
       // Re-show the banner whenever a genuinely new version is detected.
       if (dismissedVersion.current !== version) {
-        setState({ phase: "available", version });
+        setState({ phase: "available", version, devInformational });
       }
     });
 
@@ -98,7 +98,9 @@ export function UpdateNotification() {
               Update available — v{state.version}
             </span>
             <span className="text-[11px] text-slate-400">
-              Downloading in the background…
+              {state.devInformational
+                ? "Auto-update isn't available for dev builds — download it from GitHub."
+                : "Downloading in the background…"}
             </span>
           </>
         )}
@@ -153,7 +155,7 @@ export function UpdateNotification() {
           </button>
         )}
 
-        {state.phase === "available" && (
+        {state.phase === "available" && !state.devInformational && (
           <Download className="h-4 w-4 animate-pulse text-blue-400" />
         )}
 

@@ -7,19 +7,26 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@valstine/ui/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@valstine/ui/components/ui/select";
 import { useAppStore } from "../store/app-store";
 import { DBConnection, DBType } from "../lib/mock-data";
 import { DB_TYPE_META, testConnection, uploadSqliteFile } from "../lib/api";
 import { Loader2, CheckCircle2, XCircle, Upload, ShieldAlert } from "lucide-react";
 
-const DB_TYPES: DBType[] = ["pg", "mysql", "sqlite", "mssql", "cassandra"];
+const DB_TYPES: DBType[] = ["pg", "mysql", "sqlite", "mssql", "cassandra", "mongodb", "redis", "firebase"];
 
 function emptyConn(type: DBType = "pg"): Omit<DBConnection, "id"> {
   const meta = DB_TYPE_META[type];
   return {
     name: "",
     type,
-    host: type === "sqlite" ? "" : "localhost",
+    host: type === "sqlite" || type === "firebase" ? "" : "localhost",
     port: meta.defaultPort,
     database: "",
     user: "",
@@ -30,6 +37,10 @@ function emptyConn(type: DBType = "pg"): Omit<DBConnection, "id"> {
     status: "disconnected" as const,
     contactPoints: type === "cassandra" ? ["localhost"] : undefined,
     localDataCenter: type === "cassandra" ? "datacenter1" : undefined,
+    connectionString: "",
+    dbIndex: type === "redis" ? 0 : undefined,
+    serviceAccountJson: "",
+    projectId: "",
   };
 }
 
@@ -71,9 +82,10 @@ export function ConnectionDialog() {
       ...f,
       type,
       port: DB_TYPE_META[type].defaultPort,
-      host: type === "sqlite" ? "" : f.host || "localhost",
+      host: type === "sqlite" || type === "firebase" ? "" : f.host || "localhost",
       contactPoints: type === "cassandra" ? (f.contactPoints?.length ? f.contactPoints : ["localhost"]) : f.contactPoints,
       localDataCenter: type === "cassandra" ? (f.localDataCenter || "datacenter1") : f.localDataCenter,
+      dbIndex: type === "redis" ? (f.dbIndex ?? 0) : f.dbIndex,
     }));
     setTestResult(null);
   };
@@ -123,7 +135,13 @@ export function ConnectionDialog() {
       alert("Connection name is required");
       return;
     }
-    if (form.type !== "sqlite" && form.type !== "cassandra" && !form.database.trim()) {
+    if (
+      form.type !== "sqlite" &&
+      form.type !== "cassandra" &&
+      form.type !== "redis" &&
+      form.type !== "firebase" &&
+      !form.database.trim()
+    ) {
       alert("Database name is required");
       return;
     }
@@ -133,6 +151,10 @@ export function ConnectionDialog() {
       !form.database.trim()
     ) {
       alert("Filename is required for SQLite");
+      return;
+    }
+    if (form.type === "firebase" && (!form.projectId?.trim() || !form.serviceAccountJson?.trim())) {
+      alert("Project ID and Service Account JSON are required for Firebase");
       return;
     }
 
@@ -149,6 +171,9 @@ export function ConnectionDialog() {
 
   const isSQLite = form.type === "sqlite";
   const isCassandra = form.type === "cassandra";
+  const isMongo = form.type === "mongodb";
+  const isRedis = form.type === "redis";
+  const isFirebase = form.type === "firebase";
   const meta = DB_TYPE_META[form.type];
 
   return (
@@ -173,25 +198,22 @@ export function ConnectionDialog() {
             <label className="text-[11px] text-muted-foreground font-medium mb-1.5 block">
               Database Type
             </label>
-            <div className="grid grid-cols-5 gap-1.5">
-              {DB_TYPES.map((t) => {
-                const m = DB_TYPE_META[t];
-                return (
-                  <button
-                    key={t}
-                    onClick={() => handleTypeChange(t)}
-                    className={`flex flex-col items-center gap-1 p-2.5 rounded-lg border text-xs transition-colors ${
-                      form.type === t
-                        ? "border-primary bg-primary/10 text-foreground"
-                        : "border-border bg-background text-muted-foreground hover:border-primary/40"
-                    }`}
-                  >
-                    <span className="text-lg">{m.icon}</span>
-                    <span className="text-[10px] font-medium">{m.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <Select value={form.type} onValueChange={(v) => handleTypeChange(v as DBType)}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DB_TYPES.map((t) => {
+                  const m = DB_TYPE_META[t];
+                  return (
+                    <SelectItem key={t} value={t} className="text-xs">
+                      <span className="mr-1.5">{m.icon}</span>
+                      {m.label}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Name + Color */}
@@ -276,9 +298,49 @@ export function ConnectionDialog() {
                 <p className="mt-1 text-[11px] text-destructive">{uploadError}</p>
               )}
             </div>
+          ) : isFirebase ? (
+            /* Firebase: project id + pasted service-account JSON key */
+            <>
+              <div>
+                <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
+                  Project ID
+                </label>
+                <input
+                  value={form.projectId ?? ""}
+                  onChange={(e) => setForm((f) => ({ ...f, projectId: e.target.value }))}
+                  placeholder="my-firebase-project"
+                  className="w-full h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
+                  Service Account JSON
+                </label>
+                <textarea
+                  value={form.serviceAccountJson ?? ""}
+                  onChange={(e) => setForm((f) => ({ ...f, serviceAccountJson: e.target.value }))}
+                  placeholder='{"type": "service_account", "project_id": "...", ...}'
+                  rows={5}
+                  className="w-full px-2.5 py-2 rounded-md border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono resize-none"
+                />
+              </div>
+            </>
           ) : (
             /* Host / Port / DB / User / Password */
             <>
+              {(isMongo || isRedis) && (
+                <div>
+                  <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
+                    Connection String <span className="text-muted-foreground/60">(overrides host/port below)</span>
+                  </label>
+                  <input
+                    value={form.connectionString ?? ""}
+                    onChange={(e) => setForm((f) => ({ ...f, connectionString: e.target.value }))}
+                    placeholder={isMongo ? "mongodb+srv://user:pass@cluster.mongodb.net" : "redis://user:pass@host:6379"}
+                    className="w-full h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              )}
               <div className="grid grid-cols-3 gap-2">
                 <div className="col-span-2">
                   <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
@@ -341,34 +403,54 @@ export function ConnectionDialog() {
                 </div>
               )}
 
-              <div>
-                <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
-                  {isCassandra ? "Keyspace" : "Database"}
-                </label>
-                <input
-                  value={form.database}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, database: e.target.value }))
-                  }
-                  placeholder={isCassandra ? "my_keyspace" : "my_database"}
-                  className="w-full h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
+              {isRedis ? (
                 <div>
                   <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
-                    Username
+                    DB Index
                   </label>
                   <input
-                    value={form.user ?? ""}
+                    type="number"
+                    min={0}
+                    max={15}
+                    value={form.dbIndex ?? 0}
                     onChange={(e) =>
-                      setForm((f) => ({ ...f, user: e.target.value }))
+                      setForm((f) => ({ ...f, dbIndex: parseInt(e.target.value) || 0 }))
                     }
-                    placeholder={form.type === "mysql" ? "root" : "postgres"}
+                    className="w-full h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
+                    {isCassandra ? "Keyspace" : "Database"}
+                  </label>
+                  <input
+                    value={form.database}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, database: e.target.value }))
+                    }
+                    placeholder={isCassandra ? "my_keyspace" : "my_database"}
                     className="w-full h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
+              )}
+
+              <div className={isRedis ? "grid grid-cols-1 gap-2" : "grid grid-cols-2 gap-2"}>
+                {!isRedis && (
+                  <div>
+                    <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
+                      Username
+                    </label>
+                    <input
+                      value={form.user ?? ""}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, user: e.target.value }))
+                      }
+                      placeholder={form.type === "mysql" ? "root" : "postgres"}
+                      className="w-full h-8 px-2.5 rounded-md border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="text-[11px] text-muted-foreground font-medium mb-1 block">
                     Password

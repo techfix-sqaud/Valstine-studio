@@ -2,7 +2,14 @@ import type { Config } from "tailwindcss";
 
 export default {
   darkMode: ["class"],
-  content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
+  content: [
+    "./pages/**/*.{ts,tsx}",
+    "./components/**/*.{ts,tsx}",
+    "./app/**/*.{ts,tsx}",
+    "./src/**/*.{ts,tsx}",
+    "../../packages/core/**/*.{ts,tsx}",
+    "../../packages/ui/**/*.{ts,tsx}",
+  ],
   prefix: "",
   theme: {
     container: {
@@ -43,6 +50,7 @@ export default {
         },
         panel: { bg: "hsl(var(--panel-bg))", border: "hsl(var(--panel-border))" },
         statusbar: { DEFAULT: "hsl(var(--statusbar))", foreground: "hsl(var(--statusbar-fg))" },
+        canvas: "hsl(var(--canvas))",
         success: "hsl(var(--success))",
         warning: "hsl(var(--warning))",
         info: "hsl(var(--info))",

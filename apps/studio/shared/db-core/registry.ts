@@ -3,10 +3,13 @@ import { postgresAdapter } from './adapters/postgres.js';
 import { mysqlAdapter } from './adapters/mysql.js';
 import { mssqlAdapter } from './adapters/mssql.js';
 import { cassandraAdapter } from './adapters/cassandra.js';
+import { mongodbAdapter } from './adapters/mongodb.js';
+import { redisAdapter } from './adapters/redis.js';
+import { firebaseAdapter } from './adapters/firebase.js';
 
 // sqlite is injected per-runtime (Electron: knex+better-sqlite3, web server:
-// bun:sqlite) — see shared/db-core/adapters/sqlite.ts. Remaining NoSQL adapters
-// get added to this record as they land (MongoDB/Firebase/Redis, Phases 2-4).
+// bun:sqlite) — see shared/db-core/adapters/sqlite.ts. Every other adapter,
+// SQL or NoSQL, is a pure network client and can be wired directly here.
 export function createRegistry(sqliteAdapter: DbAdapter): Partial<Record<DBType, DbAdapter>> {
   return {
     pg: postgresAdapter,
@@ -14,6 +17,9 @@ export function createRegistry(sqliteAdapter: DbAdapter): Partial<Record<DBType,
     mssql: mssqlAdapter,
     sqlite: sqliteAdapter,
     cassandra: cassandraAdapter,
+    mongodb: mongodbAdapter,
+    redis: redisAdapter,
+    firebase: firebaseAdapter,
   };
 }
 

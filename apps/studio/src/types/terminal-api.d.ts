@@ -8,7 +8,7 @@ interface TerminalAPI {
 interface UpdaterAPI {
   onCheckingForUpdate: (callback: () => void) => () => void;
   onUpdateNotAvailable: (callback: () => void) => () => void;
-  onUpdateAvailable: (callback: (info: { version: string }) => void) => () => void;
+  onUpdateAvailable: (callback: (info: { version: string; devInformational?: boolean }) => void) => () => void;
   onDownloadProgress: (callback: (progress: { percent: number }) => void) => () => void;
   onUpdateDownloaded: (callback: (info: { version: string }) => void) => () => void;
   onUpdateError: (callback: (info: { message: string }) => void) => () => void;

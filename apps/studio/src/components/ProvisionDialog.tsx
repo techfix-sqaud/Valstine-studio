@@ -30,10 +30,13 @@ function randomName(type: DBType): string {
   return `valstine_${type}_${suffix}`;
 }
 
-const DB_TYPES: DBType[] = ["pg", "mysql", "mssql", "sqlite", "cassandra"];
+// Docker-provisioning stays SQL/Cassandra-only — MongoDB/Firebase/Redis
+// support (added to DBType for connect+browse) isn't wired up here yet.
+type ProvisionableDBType = Exclude<DBType, "mongodb" | "firebase" | "redis">;
+const DB_TYPES: ProvisionableDBType[] = ["pg", "mysql", "mssql", "sqlite", "cassandra"];
 
 const DOCKER_INFO: Record<
-  Exclude<DBType, "sqlite">,
+  Exclude<ProvisionableDBType, "sqlite">,
   { image: string; note: string; defaultUser: string }
 > = {
   pg: {
@@ -107,13 +110,13 @@ export function ProvisionDialog() {
   const isSqlite = dbType === "sqlite";
   const dockerInfo = isSqlite
     ? null
-    : DOCKER_INFO[dbType as Exclude<DBType, "sqlite">];
+    : DOCKER_INFO[dbType as Exclude<ProvisionableDBType, "sqlite">];
   const meta = DB_TYPE_META[dbType];
 
-  const handleTypeChange = (t: DBType) => {
+  const handleTypeChange = (t: ProvisionableDBType) => {
     setDbType(t);
     setResult(null);
-    const defaults: Record<DBType, { port: number; user: string }> = {
+    const defaults: Record<ProvisionableDBType, { port: number; user: string }> = {
       pg: { port: 5433, user: "postgres" },
       mysql: { port: 3307, user: "root" },
       mssql: { port: 1434, user: "sa" },

@@ -17,6 +17,10 @@ function toPayload(conn: DBConnection) {
     sslRejectUnauthorized: conn.sslRejectUnauthorized ?? true,
     contactPoints: conn.contactPoints,
     localDataCenter: conn.localDataCenter,
+    connectionString: conn.connectionString,
+    dbIndex: conn.dbIndex,
+    serviceAccountJson: conn.serviceAccountJson,
+    projectId: conn.projectId,
   };
 }
 
@@ -479,12 +483,32 @@ export async function appDeleteApiRequest(id: string): Promise<{ ok: boolean; er
   return request('DELETE', `/api/app/api-requests/${id}`);
 }
 
+// Builds a display/copy connection string for the "Copy Connection String"
+// context-menu actions in ConnectionsList.tsx and DatabaseExplorer.tsx.
+export function buildConnectionStringDisplay(conn: DBConnection): string {
+  if (conn.type === 'sqlite') return conn.filename ?? conn.database;
+  if (conn.type === 'firebase') return conn.projectId ?? '(no project id set)';
+  if (conn.connectionString) return conn.connectionString;
+  if (conn.type === 'cassandra') {
+    const host = conn.contactPoints?.join(',') ?? conn.host;
+    return `cassandra://${conn.user ? conn.user + '@' : ''}${host}/${conn.database}`;
+  }
+  if (conn.type === 'redis') {
+    return `redis://${conn.user ? conn.user + '@' : ''}${conn.host}:${conn.port}/${conn.dbIndex ?? 0}`;
+  }
+  const scheme = conn.type === 'pg' ? 'postgresql' : conn.type;
+  return `${scheme}://${conn.user ? conn.user + '@' : ''}${conn.host}:${conn.port}/${conn.database}`;
+}
+
 export const DB_TYPE_META: Record<DBType, { label: string; defaultPort: number; icon: string; color: string }> = {
   pg: { label: 'PostgreSQL', defaultPort: 5432, icon: '🐘', color: 'text-blue-400' },
   mysql: { label: 'MySQL', defaultPort: 3306, icon: '🐬', color: 'text-orange-400' },
   sqlite: { label: 'SQLite', defaultPort: 0, icon: '📦', color: 'text-cyan-400' },
   mssql: { label: 'SQL Server', defaultPort: 1433, icon: '🔷', color: 'text-red-400' },
   cassandra: { label: 'Cassandra', defaultPort: 9042, icon: '🌀', color: 'text-purple-400' },
+  mongodb: { label: 'MongoDB', defaultPort: 27017, icon: '🍃', color: 'text-green-400' },
+  firebase: { label: 'Firebase', defaultPort: 443, icon: '🔥', color: 'text-amber-400' },
+  redis: { label: 'Redis', defaultPort: 6379, icon: '🟥', color: 'text-rose-400' },
 };
 
 // Per-type UI capabilities — kept in sync with each DbAdapter's `capabilities`
@@ -502,4 +526,7 @@ export const DB_TYPE_CAPABILITIES: Record<DBType, {
   sqlite: { supportsSchemas: true, supportsFunctions: false, supportsTriggers: true, supportsSequences: false, supportsExplain: true },
   mssql: { supportsSchemas: true, supportsFunctions: true, supportsTriggers: true, supportsSequences: false, supportsExplain: true },
   cassandra: { supportsSchemas: false, supportsFunctions: false, supportsTriggers: false, supportsSequences: false, supportsExplain: false },
+  mongodb: { supportsSchemas: false, supportsFunctions: false, supportsTriggers: false, supportsSequences: false, supportsExplain: false },
+  firebase: { supportsSchemas: false, supportsFunctions: false, supportsTriggers: false, supportsSequences: false, supportsExplain: false },
+  redis: { supportsSchemas: false, supportsFunctions: false, supportsTriggers: false, supportsSequences: false, supportsExplain: false },
 };

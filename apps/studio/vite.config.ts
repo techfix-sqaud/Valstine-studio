@@ -1,6 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
+import { readFileSync } from "fs";
+
+const rootPkg = JSON.parse(
+  readFileSync(path.resolve(__dirname, "../../package.json"), "utf-8"),
+);
 
 const VITE_FS_DENY = ['.env', '.env.*', '*.{crt,pem}', '**/.git/**'];
 const SAFE_DOT_SEGMENTS = new Set(['.vite', '.well-known']);
@@ -72,6 +77,9 @@ export default defineConfig({
   },
   preview: {
     host: '::',
+  },
+  define: {
+    "import.meta.env.VITE_APP_VERSION": JSON.stringify(rootPkg.version),
   },
   plugins: [react(), sensitiveRequestGuard()],
   resolve: {
