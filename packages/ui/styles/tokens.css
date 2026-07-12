@@ -345,6 +345,25 @@
   }
 }
 
+/* Landing page theme preview: crossfades background/border/text colors when
+   the local dark/light toggle flips, instead of hard-cutting. Scoped to
+   `.landing-page` only — a blanket `*` transition on the whole app would add
+   jank to drag/resize interactions in the actual Studio/Analyst OS workspace. */
+.landing-page,
+.landing-page * {
+  transition:
+    background-color 240ms ease,
+    border-color 240ms ease,
+    color 180ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-page,
+  .landing-page * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
 /* Smooth page transitions */
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(8px); }

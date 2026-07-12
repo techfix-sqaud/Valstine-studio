@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Apple,
   ArrowRight,
   Bot,
-  Command,
   Database,
   Download,
   GitBranch,
@@ -13,19 +12,19 @@ import {
   Laptop,
   Layers3,
   Moon,
-  PanelsTopLeft,
   PlayCircle,
   Shield,
   Sparkles,
   SplitSquareVertical,
   Sun,
-  TableProperties,
   TerminalSquare,
   Waypoints,
   Workflow,
 } from "lucide-react";
 import { useAppStore } from "@valstine/core/store/app-store";
-import { isDarkTheme, applyThemeClass } from "@valstine/core/lib/themes";
+import { isDarkTheme } from "@valstine/core/lib/themes";
+import { DB_TYPE_META } from "@valstine/core/lib/api";
+import { cn } from "@valstine/ui/lib/utils";
 
 function detectPlatform(): "mac" | "windows" | "linux" | "unknown" {
   const ua = navigator.userAgent.toLowerCase();
@@ -35,6 +34,47 @@ function detectPlatform(): "mac" | "windows" | "linux" | "unknown" {
   return "unknown";
 }
 
+// Reveals content once it scrolls into view. Skips the animation entirely
+// under prefers-reduced-motion instead of just shortening it.
+function useReveal<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setVisible(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+          io.disconnect();
+        }
+      },
+      { threshold: 0.15 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  return { ref, visible };
+}
+
+function Reveal({ children, className }: { children: ReactNode; className?: string }) {
+  const { ref, visible } = useReveal<HTMLDivElement>();
+  return (
+    <div
+      ref={ref}
+      className={cn(className, visible ? "animate-fade-in" : "opacity-0")}
+    >
+      {children}
+    </div>
+  );
+}
+
 const products = [
   {
     id: "studio",
@@ -42,8 +82,6 @@ const products = [
     title: "Valstine Studio",
     summary:
       "For shipping database changes with confidence: query editing, schema comparison, Git-aware workflows, connections, and production-minded tooling.",
-    accent: "from-[#214c91]/22 via-[#4d79bf]/10 to-transparent",
-    border: "border-[#214c91]/20",
     cta: "Open Studio",
     points: [
       "Query editor, results, terminal, and database explorer in one workspace",
@@ -57,8 +95,6 @@ const products = [
     title: "Valstine Analyst OS",
     summary:
       "For exploring and explaining data with SQL, notebooks, visualizations, migrations, and an in-context database copilot.",
-    accent: "from-[#315ea8]/22 via-[#7aa1e4]/12 to-transparent",
-    border: "border-[#315ea8]/20",
     cta: "Launch Analyst OS",
     points: [
       "Notebook-style analysis, charts, and table previews with a developer feel",
@@ -68,24 +104,21 @@ const products = [
   },
 ] as const;
 
-const productPillars = [
+const trustStrip = [
   {
     icon: Workflow,
-    title: "Two focused products",
-    description:
-      "Studio and Analyst OS share the platform but stay visually and operationally distinct so users know which workflow they are entering.",
+    label: "Two focused products",
+    detail: "Studio and Analyst OS stay visually and operationally distinct.",
   },
   {
     icon: Shield,
-    title: "Production and exploration",
-    description:
-      "Studio serves operational database work, while Analyst OS serves discovery, reporting, and data storytelling.",
+    label: "Production and exploration",
+    detail: "One for shipping changes, one for discovery and reporting.",
   },
   {
     icon: Globe,
-    title: "Cross-platform delivery",
-    description:
-      "macOS, Windows, Linux, and browser entry all point back to the same product family and design language.",
+    label: "Desktop and browser",
+    detail: "Studio installs natively; Analyst OS runs entirely in the browser.",
   },
 ] as const;
 
@@ -93,17 +126,74 @@ const platformCards = [
   {
     icon: Apple,
     title: "macOS native",
-    body: "Desktop shell with Studio and Analyst OS side by side, optimized for keyboard-first workflows and native packaging.",
+    body: "Studio installs as a native desktop app, optimized for keyboard-first workflows and native packaging.",
   },
   {
     icon: Laptop,
     title: "Windows and Linux",
-    body: "One install surface for engineers, analysts, and classrooms without losing the desktop product identity.",
+    body: "The same Studio install surface for engineers running outside of macOS, without losing the desktop product identity.",
   },
   {
     icon: Globe,
-    title: "Web entry",
-    body: "Landing and browser-based access let users understand the product split before they commit to a workflow.",
+    title: "Analyst OS, in your browser",
+    body: "No install required — sign in and start exploring data with SQL, notebooks, and AI guidance from any machine.",
+  },
+] as const;
+
+// Single source of truth for supported database types (packages/core/lib/api.ts) —
+// listing them here directly instead of re-declaring labels/icons keeps this
+// section from drifting out of sync with what the app actually connects to.
+const supportedDatabases = [
+  "pg",
+  "mysql",
+  "sqlite",
+  "mssql",
+  "mongodb",
+  "redis",
+  "cassandra",
+  "firebase",
+] as const;
+
+const features = [
+  {
+    icon: PlayCircle,
+    title: "Query editor",
+    body: "A fast, Monaco-powered SQL editor with autocomplete, run-selection, and inline results.",
+  },
+  {
+    icon: SplitSquareVertical,
+    title: "Schema diff",
+    body: "Compare schemas across environments and generate safe migration scripts.",
+  },
+  {
+    icon: GitPullRequest,
+    title: "Git-aware workflows",
+    body: "Branch, commit, and open pull requests without leaving the database workspace.",
+  },
+  {
+    icon: TerminalSquare,
+    title: "Integrated terminal",
+    body: "A real shell alongside your queries, for scripts, migrations, and tooling.",
+  },
+  {
+    icon: Bot,
+    title: "AI copilot",
+    body: "Ask questions about your schema, generate SQL, and get plain-English explanations of query plans.",
+  },
+  {
+    icon: Waypoints,
+    title: "Notebooks & visualization",
+    body: "Notebook-style analysis with charts and table previews in Analyst OS.",
+  },
+  {
+    icon: Database,
+    title: "Multi-database support",
+    body: "PostgreSQL, MySQL, SQLite, SQL Server, MongoDB, Cassandra, Redis, and Firebase.",
+  },
+  {
+    icon: Globe,
+    title: "Cross-platform",
+    body: "Native on macOS, Windows, and Linux, plus a full browser experience for Analyst OS.",
   },
 ] as const;
 
@@ -164,760 +254,71 @@ const pricingPlans = [
   },
 ] as const;
 
-function StudioPreview({
-  borderClass,
+// Renders whichever theme's captured screenshot matches the current preview
+// state and crossfades between them — this is what keeps the product imagery
+// in sync with the theme toggle instead of hard-cutting.
+function ThemedScreenshot({
+  base,
   isDark,
+  alt,
 }: {
-  borderClass: string;
+  base: "studio" | "analyst";
   isDark: boolean;
+  alt: string;
 }) {
-  const palette = isDark
-    ? {
-        frame: "#0a1324",
-        topbar: "#0c1830",
-        canvas: "#09111f",
-        rail: "#07101d",
-        sidebar: "#0b1526",
-        surface: "#0a1324",
-        elevated: "#12203a",
-        mutedPanel: "#10203b",
-        active: "#17335f",
-        activeSoft: "#11213d",
-        border: "rgba(255,255,255,0.10)",
-        strongBorder: "rgba(78,121,199,0.30)",
-        text: "#dbe7f8",
-        title: "#ffffff",
-        muted: "#9fb3d1",
-        subtle: "#7389ab",
-        line: "#5e7393",
-        accent: "#8cb2f1",
-        accentText: "#d7e6ff",
-      }
-    : {
-        frame: "#f7fbff",
-        topbar: "#edf4ff",
-        canvas: "#f5f9ff",
-        rail: "#eaf1fb",
-        sidebar: "#f3f7ff",
-        surface: "#f8fbff",
-        elevated: "#ffffff",
-        mutedPanel: "#edf4ff",
-        active: "#d7e6fb",
-        activeSoft: "#e7f0fc",
-        border: "rgba(22,58,102,0.10)",
-        strongBorder: "rgba(33,76,145,0.20)",
-        text: "#183b65",
-        title: "#16365f",
-        muted: "#4f739d",
-        subtle: "#7190b4",
-        line: "#8ca5c4",
-        accent: "#315ea8",
-        accentText: "#1c4174",
-      };
+  const [lightFailed, setLightFailed] = useState(false);
+  const [darkFailed, setDarkFailed] = useState(false);
+  const bothFailed = lightFailed && darkFailed;
 
   return (
-    <div
-      className={`overflow-hidden rounded-[26px] border ${borderClass}`}
-      style={{ backgroundColor: palette.frame }}
-    >
-      <div
-        className="flex items-center justify-between border-b px-4 py-3"
-        style={{ backgroundColor: palette.topbar, borderColor: palette.border }}
-      >
-        <div>
-          <div
-            className="text-[10px] uppercase tracking-[0.22em]"
-            style={{ color: palette.accent }}
-          >
-            Studio Preview
-          </div>
-          <div
-            className="mt-1 text-sm font-semibold"
-            style={{ color: palette.title }}
-          >
-            Query, schema diff, and Git workflow
-          </div>
+    <div className="relative aspect-[16/10] w-full overflow-hidden rounded-3xl border border-border bg-secondary shadow-2xl">
+      {bothFailed ? (
+        <div className="flex h-full items-center justify-center text-muted-foreground">
+          <Database className="h-10 w-10 opacity-30" />
         </div>
-        <div
-          className="rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em]"
-          style={{
-            borderColor: palette.strongBorder,
-            backgroundColor: palette.active,
-            color: palette.accentText,
-          }}
-        >
-          Production flow
-        </div>
-      </div>
-
-      <div
-        className="grid min-h-[360px] grid-cols-[56px_200px_minmax(0,1fr)]"
-        style={{ backgroundColor: palette.canvas }}
-      >
-        <div
-          className="border-r p-2"
-          style={{ backgroundColor: palette.rail, borderColor: palette.border }}
-        >
-          {[
-            Database,
-            PanelsTopLeft,
-            GitBranch,
-            TerminalSquare,
-            SplitSquareVertical,
-          ].map((Icon, index) => (
-            <div
-              key={index}
-              className={[
-                "mb-2 flex h-10 w-10 items-center justify-center rounded-xl border",
-              ].join(" ")}
-              style={
-                index === 1
-                  ? {
-                      borderColor: palette.strongBorder,
-                      backgroundColor: palette.active,
-                      color: palette.accentText,
-                    }
-                  : { borderColor: "transparent", color: palette.subtle }
-              }
-            >
-              <Icon className="h-4 w-4" />
-            </div>
-          ))}
-        </div>
-
-        <div
-          className="border-r p-4"
-          style={{
-            backgroundColor: palette.sidebar,
-            borderColor: palette.border,
-          }}
-        >
-          <div
-            className="rounded-xl border px-3 py-2 text-[12px]"
-            style={{
-              borderColor: palette.border,
-              backgroundColor: palette.elevated,
-              color: palette.muted,
-            }}
-          >
-            Search connections, tables, diffs...
-          </div>
-          <div
-            className="mt-4 text-[10px] uppercase tracking-[0.2em]"
-            style={{ color: palette.subtle }}
-          >
-            Explorer
-          </div>
-          <div
-            className="mt-3 space-y-2 text-[12px]"
-            style={{ color: palette.text }}
-          >
-            <div
-              className="rounded-lg px-3 py-2"
-              style={{ backgroundColor: palette.active }}
-            >
-              prod.users
-            </div>
-            <div className="rounded-lg px-3 py-2">prod.orders</div>
-            <div className="rounded-lg px-3 py-2">stage.users</div>
-            <div className="rounded-lg px-3 py-2">stage.orders</div>
-          </div>
-          <div
-            className="mt-5 rounded-xl border p-3 text-[11px]"
-            style={{
-              borderColor: palette.strongBorder,
-              backgroundColor: palette.activeSoft,
-              color: palette.accentText,
-            }}
-          >
-            Active compare: <span className="font-semibold">stage → prod</span>
-          </div>
-        </div>
-
-        <div
-          className="grid grid-rows-[auto_minmax(0,1fr)_148px]"
-          style={{ backgroundColor: palette.surface }}
-        >
-          <div className="border-b" style={{ borderColor: palette.border }}>
-            <div className="flex items-center gap-2 px-3 pt-3">
-              <div
-                className="rounded-t-xl border px-3 py-2 text-[12px]"
-                style={{
-                  borderColor: palette.border,
-                  backgroundColor: palette.elevated,
-                  color: palette.title,
-                }}
-              >
-                active_users.sql
-              </div>
-              <div
-                className="rounded-t-xl border px-3 py-2 text-[12px]"
-                style={{
-                  borderColor: palette.border,
-                  backgroundColor: palette.canvas,
-                  color: palette.muted,
-                }}
-              >
-                schema_diff.diff
-              </div>
-              <div
-                className="rounded-t-xl border px-3 py-2 text-[12px]"
-                style={{
-                  borderColor: palette.border,
-                  backgroundColor: palette.canvas,
-                  color: palette.muted,
-                }}
-              >
-                git_panel
-              </div>
-            </div>
-            <div
-              className="flex items-center gap-2 border-t px-3 py-3 text-[12px]"
-              style={{ borderColor: palette.border, color: palette.muted }}
-            >
-              <div
-                className="rounded-lg border px-3 py-1.5"
-                style={{
-                  borderColor: palette.strongBorder,
-                  backgroundColor: palette.active,
-                  color: palette.accentText,
-                }}
-              >
-                Run Query
-              </div>
-              <div
-                className="rounded-lg border px-3 py-1.5"
-                style={{
-                  borderColor: palette.border,
-                  backgroundColor: palette.elevated,
-                }}
-              >
-                Compare Schema
-              </div>
-              <div
-                className="rounded-lg border px-3 py-1.5"
-                style={{
-                  borderColor: palette.border,
-                  backgroundColor: palette.elevated,
-                }}
-              >
-                Open PR
-              </div>
-            </div>
-          </div>
-
-          <div className="grid min-h-0 grid-cols-[1.05fr_0.95fr] gap-3 p-3">
-            <div
-              className="overflow-hidden rounded-2xl border"
-              style={{
-                borderColor: palette.border,
-                backgroundColor: palette.elevated,
-              }}
-            >
-              <div className="grid grid-cols-[46px_minmax(0,1fr)] font-mono text-[12px] leading-6">
-                <div
-                  className="border-r px-2 py-3 text-right"
-                  style={{
-                    borderColor: palette.border,
-                    backgroundColor: palette.canvas,
-                    color: palette.line,
-                  }}
-                >
-                  <div>1</div>
-                  <div>2</div>
-                  <div>3</div>
-                  <div>4</div>
-                  <div>5</div>
-                </div>
-                <div className="px-4 py-3" style={{ color: palette.text }}>
-                  <div>SELECT id, email, full_name</div>
-                  <div>FROM prod.users</div>
-                  <div>WHERE is_active = true</div>
-                  <div>ORDER BY created_at DESC</div>
-                  <div>LIMIT 100;</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-3">
-              <div
-                className="rounded-2xl border p-3 text-[12px]"
-                style={{
-                  borderColor: palette.strongBorder,
-                  backgroundColor: palette.mutedPanel,
-                  color: palette.accentText,
-                }}
-              >
-                <div
-                  className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em]"
-                  style={{ color: palette.accent }}
-                >
-                  <SplitSquareVertical className="h-3.5 w-3.5" />
-                  Schema Diff
-                </div>
-                <div className="space-y-1.5 font-mono text-[11px]">
-                  <div style={{ color: isDark ? "#8eb5ff" : "#2a5ca7" }}>
-                    ~ email varchar(100) → varchar(255)
-                  </div>
-                  <div className="text-emerald-300">+ audit_log table</div>
-                  <div className="text-rose-300">- legacy_ref integer</div>
-                </div>
-              </div>
-              <div
-                className="rounded-2xl border p-3 text-[12px]"
-                style={{
-                  borderColor: palette.strongBorder,
-                  backgroundColor: palette.mutedPanel,
-                  color: palette.accentText,
-                }}
-              >
-                <div
-                  className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em]"
-                  style={{ color: palette.accent }}
-                >
-                  <GitPullRequest className="h-3.5 w-3.5" />
-                  Git Workflow
-                </div>
-                <div className="space-y-1.5 text-[11px]">
-                  <div>Branch: feature/add-audit-log</div>
-                  <div>2 commits ahead of origin</div>
-                  <div>PR ready after migration review</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div
-            className="border-t p-3"
-            style={{
-              borderColor: palette.border,
-              backgroundColor: palette.canvas,
-            }}
-          >
-            <div
-              className="mb-2 text-[10px] uppercase tracking-[0.2em]"
-              style={{ color: palette.subtle }}
-            >
-              Results
-            </div>
-            <div
-              className="grid grid-cols-4 gap-px overflow-hidden rounded-xl border text-[11px]"
-              style={{
-                borderColor: palette.border,
-                backgroundColor: isDark
-                  ? "rgba(255,255,255,0.05)"
-                  : "rgba(49,94,168,0.08)",
-              }}
-            >
-              {[
-                "id",
-                "email",
-                "full_name",
-                "created_at",
-                "18",
-                "morgan@valstine.com",
-                "Morgan Price",
-                "2026-05-08",
-              ].map((cell, index) => (
-                <div
-                  key={`${cell}-${index}`}
-                  className={["px-2 py-2"].join(" ")}
-                  style={
-                    index < 4
-                      ? {
-                          backgroundColor: palette.surface,
-                          color: palette.muted,
-                        }
-                      : {
-                          backgroundColor: palette.elevated,
-                          color: palette.text,
-                        }
-                  }
-                >
-                  {cell}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AnalystPreview({
-  borderClass,
-  isDark,
-}: {
-  borderClass: string;
-  isDark: boolean;
-}) {
-  const palette = isDark
-    ? {
-        frame: "#07101f",
-        topbar: "#0b1730",
-        canvas: "#06101c",
-        rail: "#050d18",
-        sidebar: "#081323",
-        surface: "#081223",
-        elevated: "#122241",
-        mutedPanel: "#10203d",
-        active: "#17345f",
-        border: "rgba(255,255,255,0.10)",
-        strongBorder: "rgba(84,131,217,0.28)",
-        text: "#e4efff",
-        title: "#ffffff",
-        muted: "#9fb5d5",
-        subtle: "#7390b8",
-        line: "#637a9f",
-        accent: "#8db6ff",
-        accentText: "#d7e6ff",
-      }
-    : {
-        frame: "#f7fbff",
-        topbar: "#eef4ff",
-        canvas: "#f5f8ff",
-        rail: "#ecf2fb",
-        sidebar: "#f2f7ff",
-        surface: "#f8fbff",
-        elevated: "#ffffff",
-        mutedPanel: "#edf3ff",
-        active: "#dbe7fb",
-        border: "rgba(20,56,98,0.10)",
-        strongBorder: "rgba(49,94,168,0.22)",
-        text: "#17385f",
-        title: "#15365d",
-        muted: "#51759e",
-        subtle: "#7191ba",
-        line: "#8ca5c8",
-        accent: "#315ea8",
-        accentText: "#1d457b",
-      };
-
-  return (
-    <div
-      className={`overflow-hidden rounded-[26px] border ${borderClass}`}
-      style={{ backgroundColor: palette.frame }}
-    >
-      <div
-        className="flex items-center justify-between border-b px-4 py-3"
-        style={{ backgroundColor: palette.topbar, borderColor: palette.border }}
-      >
-        <div>
-          <div
-            className="text-[10px] uppercase tracking-[0.22em]"
-            style={{ color: palette.accent }}
-          >
-            Analyst OS Preview
-          </div>
-          <div
-            className="mt-1 text-sm font-semibold"
-            style={{ color: palette.title }}
-          >
-            SQL, notebooks, AI, and visualization
-          </div>
-        </div>
-        <div
-          className="rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em]"
-          style={{
-            borderColor: palette.strongBorder,
-            backgroundColor: palette.active,
-            color: palette.accentText,
-          }}
-        >
-          Exploration flow
-        </div>
-      </div>
-
-      <div
-        className="grid min-h-[360px] grid-cols-[56px_210px_minmax(0,1fr)]"
-        style={{ backgroundColor: palette.canvas }}
-      >
-        <div
-          className="border-r p-2"
-          style={{ backgroundColor: palette.rail, borderColor: palette.border }}
-        >
-          {[
-            PanelsTopLeft,
-            PlayCircle,
-            TableProperties,
-            Bot,
-            Waypoints,
-            Command,
-          ].map((Icon, index) => (
-            <div
-              key={index}
-              className={[
-                "mb-2 flex h-10 w-10 items-center justify-center rounded-xl border",
-              ].join(" ")}
-              style={
-                index === 3
-                  ? {
-                      borderColor: palette.strongBorder,
-                      backgroundColor: palette.active,
-                      color: palette.accentText,
-                    }
-                  : { borderColor: "transparent", color: palette.subtle }
-              }
-            >
-              <Icon className="h-4 w-4" />
-            </div>
-          ))}
-        </div>
-
-        <div
-          className="border-r p-4"
-          style={{
-            backgroundColor: palette.sidebar,
-            borderColor: palette.border,
-          }}
-        >
-          <div
-            className="rounded-xl border px-3 py-2 text-[12px]"
-            style={{
-              borderColor: palette.border,
-              backgroundColor: palette.elevated,
-              color: palette.muted,
-            }}
-          >
-            Search tables, notebooks, prompts...
-          </div>
-          <div
-            className="mt-4 text-[10px] uppercase tracking-[0.2em]"
-            style={{ color: palette.subtle }}
-          >
-            Explorer
-          </div>
-          <div
-            className="mt-3 space-y-2 text-[12px]"
-            style={{ color: palette.text }}
-          >
-            <div
-              className="rounded-lg px-3 py-2"
-              style={{ backgroundColor: palette.active }}
-            >
-              analytics/cohorts.ipynb
-            </div>
-            <div className="rounded-lg px-3 py-2">queries/retention.sql</div>
-            <div className="rounded-lg px-3 py-2">charts/retention_heatmap</div>
-            <div className="rounded-lg px-3 py-2">imports/students.csv</div>
-          </div>
-        </div>
-
-        <div
-          className="grid grid-rows-[auto_minmax(0,1fr)_148px]"
-          style={{ backgroundColor: palette.surface }}
-        >
-          <div className="border-b" style={{ borderColor: palette.border }}>
-            <div className="flex items-center gap-2 px-3 pt-3">
-              <div
-                className="rounded-t-xl border px-3 py-2 text-[12px]"
-                style={{
-                  borderColor: palette.border,
-                  backgroundColor: palette.elevated,
-                  color: palette.title,
-                }}
-              >
-                cohort_retention.sql
-              </div>
-              <div
-                className="rounded-t-xl border px-3 py-2 text-[12px]"
-                style={{
-                  borderColor: palette.border,
-                  backgroundColor: palette.canvas,
-                  color: palette.muted,
-                }}
-              >
-                retention_notes.ipynb
-              </div>
-            </div>
-            <div
-              className="flex items-center gap-2 border-t px-3 py-3 text-[12px]"
-              style={{ borderColor: palette.border, color: palette.muted }}
-            >
-              <div
-                className="rounded-lg border px-3 py-1.5"
-                style={{
-                  borderColor: palette.strongBorder,
-                  backgroundColor: palette.active,
-                  color: palette.accentText,
-                }}
-              >
-                Run Query
-              </div>
-              <div
-                className="rounded-lg border px-3 py-1.5"
-                style={{
-                  borderColor: palette.border,
-                  backgroundColor: palette.elevated,
-                }}
-              >
-                AI Explain
-              </div>
-              <div
-                className="rounded-lg border px-3 py-1.5"
-                style={{
-                  borderColor: palette.border,
-                  backgroundColor: palette.elevated,
-                }}
-              >
-                Build Chart
-              </div>
-            </div>
-          </div>
-
-          <div className="grid min-h-0 grid-cols-[1.1fr_0.9fr] gap-3 p-3">
-            <div
-              className="overflow-hidden rounded-2xl border"
-              style={{
-                borderColor: palette.border,
-                backgroundColor: palette.elevated,
-              }}
-            >
-              <div className="grid grid-cols-[46px_minmax(0,1fr)] font-mono text-[12px] leading-6">
-                <div
-                  className="border-r px-2 py-3 text-right"
-                  style={{
-                    borderColor: palette.border,
-                    backgroundColor: palette.canvas,
-                    color: palette.line,
-                  }}
-                >
-                  <div>1</div>
-                  <div>2</div>
-                  <div>3</div>
-                  <div>4</div>
-                  <div>5</div>
-                </div>
-                <div className="px-4 py-3" style={{ color: palette.text }}>
-                  <div>WITH cohort_sizes AS (</div>
-                  <div>&nbsp;&nbsp;SELECT cohort_month, COUNT(*)</div>
-                  <div>&nbsp;&nbsp;FROM analytics.fact_sessions</div>
-                  <div>)</div>
-                  <div>SELECT * FROM retention_summary;</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-3">
-              <div
-                className="rounded-2xl border p-3 text-[12px]"
-                style={{
-                  borderColor: palette.strongBorder,
-                  backgroundColor: palette.mutedPanel,
-                  color: palette.accentText,
-                }}
-              >
-                <div
-                  className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em]"
-                  style={{ color: palette.accent }}
-                >
-                  <Bot className="h-3.5 w-3.5" />
-                  AI Insight
-                </div>
-                <div className="text-[11px] leading-5">
-                  Month-two retention drops hardest in cohorts with fewer than
-                  three weekly interactions.
-                </div>
-              </div>
-              <div
-                className="rounded-2xl border p-3"
-                style={{
-                  borderColor: palette.strongBorder,
-                  backgroundColor: palette.mutedPanel,
-                }}
-              >
-                <div
-                  className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[0.2em]"
-                  style={{ color: palette.accent }}
-                >
-                  <Layers3 className="h-3.5 w-3.5" />
-                  Visualization
-                </div>
-                <div className="grid grid-cols-4 gap-2">
-                  {Array.from({ length: 12 }).map((_, index) => (
-                    <div
-                      key={index}
-                      className="aspect-square rounded-md"
-                      style={{
-                        backgroundColor: isDark
-                          ? `rgba(120, 163, 255, ${0.16 + ((index % 4) + 1) * 0.12})`
-                          : `rgba(49, 94, 168, ${0.12 + ((index % 4) + 1) * 0.1})`,
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div
-            className="border-t p-3"
-            style={{
-              borderColor: palette.border,
-              backgroundColor: palette.canvas,
-            }}
-          >
-            <div
-              className="mb-2 text-[10px] uppercase tracking-[0.2em]"
-              style={{ color: palette.subtle }}
-            >
-              Results
-            </div>
-            <div
-              className="grid grid-cols-5 gap-px overflow-hidden rounded-xl border text-[11px]"
-              style={{
-                borderColor: palette.border,
-                backgroundColor: isDark
-                  ? "rgba(255,255,255,0.05)"
-                  : "rgba(49,94,168,0.08)",
-              }}
-            >
-              {[
-                "cohort",
-                "month",
-                "retention",
-                "active",
-                "size",
-                "2025-11",
-                "2025-12",
-                "74.8%",
-                "585",
-                "782",
-              ].map((cell, index) => (
-                <div
-                  key={`${cell}-${index}`}
-                  className={["px-2 py-2"].join(" ")}
-                  style={
-                    index < 5
-                      ? {
-                          backgroundColor: palette.surface,
-                          color: palette.muted,
-                        }
-                      : {
-                          backgroundColor: palette.elevated,
-                          color: palette.text,
-                        }
-                  }
-                >
-                  {cell}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
+      ) : (
+        <>
+          <img
+            src={`/screenshots/${base}-light-modern.png`}
+            alt={alt}
+            loading="lazy"
+            onError={() => setLightFailed(true)}
+            className={cn(
+              "absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-500",
+              isDark ? "opacity-0" : "opacity-100",
+              lightFailed && "hidden",
+            )}
+          />
+          <img
+            src={`/screenshots/${base}-black.png`}
+            alt=""
+            aria-hidden={!isDark}
+            loading="lazy"
+            onError={() => setDarkFailed(true)}
+            className={cn(
+              "absolute inset-0 h-full w-full object-cover object-top transition-opacity duration-500",
+              isDark ? "opacity-100" : "opacity-0",
+              darkFailed && "hidden",
+            )}
+          />
+        </>
+      )}
     </div>
   );
 }
 
 export default function Landing() {
   const navigate = useNavigate();
-  const { completeOnboarding, isFirstTime, theme, toggleTheme } = useAppStore();
+  const { completeOnboarding, isFirstTime, theme } = useAppStore();
   const platform = detectPlatform();
-  const isDark = isDarkTheme(theme);
-  // When running inside the Electron shell the user already has the app installed.
-  // Download buttons must never open GitHub in the external browser.
+
+  // The landing page presents exactly the two flagship themes (Black / Space
+  // Gray and Light Modern) regardless of whatever theme the app itself is
+  // currently set to — this is a local preview toggle, not a write to the
+  // user's real app-wide theme preference. Seeded once from the app's
+  // current theme so returning users see a consistent bucket on arrival.
+  const [isDark, setIsDark] = useState(() => isDarkTheme(theme));
+
   const isElectron =
     typeof window !== "undefined" && !!(window as any).electronAPI?.isElectron;
   const [releaseInfo, setReleaseInfo] = useState<{
@@ -927,79 +328,7 @@ export default function Landing() {
     assets: Record<string, string>;
   } | null>(null);
 
-  const themeVars = useMemo<CSSProperties>(
-    () =>
-      ({
-        "--landing-bg": isDark ? "#050c18" : "#edf4ff",
-        "--landing-nav": isDark
-          ? "rgba(7,14,28,0.84)"
-          : "rgba(255,255,255,0.86)",
-        "--landing-panel": isDark
-          ? "rgba(9,18,34,0.95)"
-          : "rgba(255,255,255,0.95)",
-        "--landing-panel-alt": isDark
-          ? "rgba(11,23,44,0.92)"
-          : "rgba(245,250,255,0.98)",
-        "--landing-soft": isDark
-          ? "rgba(124,164,255,0.08)"
-          : "rgba(27,74,140,0.05)",
-        "--landing-soft-hover": isDark
-          ? "rgba(124,164,255,0.14)"
-          : "rgba(27,74,140,0.09)",
-        "--landing-border": isDark
-          ? "rgba(124,164,255,0.16)"
-          : "rgba(27,74,140,0.12)",
-        "--landing-text": isDark ? "#eef5ff" : "#15365d",
-        "--landing-muted": isDark ? "#c4d7f2" : "#3f648f",
-        "--landing-dim": isDark ? "#7c95b7" : "#5d80a9",
-        "--landing-accent": isDark ? "#8db6ff" : "#2f5ea7",
-        "--landing-accent-strong": isDark ? "#214c91" : "#1f4f93",
-        "--landing-accent-soft": isDark
-          ? "rgba(33,76,145,0.12)"
-          : "rgba(33,76,145,0.10)",
-        "--landing-accent-soft-hover": isDark
-          ? "rgba(33,76,145,0.20)"
-          : "rgba(33,76,145,0.16)",
-        "--landing-accent-text": isDark ? "#dbe8ff" : "#183b66",
-        "--landing-primary-button": isDark ? "#214c91" : "#214c91",
-        "--landing-primary-button-hover": isDark ? "#1a3e75" : "#183f7c",
-        "--landing-primary-button-text": "#ffffff",
-        "--landing-shadow": isDark
-          ? "0 30px 90px rgba(0,0,0,0.34)"
-          : "0 24px 80px rgba(17,47,87,0.12)",
-        "--landing-card-shadow": isDark
-          ? "0 18px 45px rgba(0,0,0,0.18)"
-          : "0 18px 45px rgba(17,47,87,0.08)",
-      }) as CSSProperties,
-    [isDark],
-  );
-
-  const overlayStyle = useMemo<CSSProperties>(
-    () => ({
-      backgroundImage: isDark
-        ? "radial-gradient(circle at top left, rgba(83,128,218,0.24), transparent 28%), radial-gradient(circle at 84% 16%, rgba(128,164,255,0.18), transparent 22%), linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)"
-        : "radial-gradient(circle at top left, rgba(49,94,168,0.16), transparent 28%), radial-gradient(circle at 84% 16%, rgba(117,154,225,0.16), transparent 22%), linear-gradient(rgba(27,74,140,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(27,74,140,0.04) 1px, transparent 1px)",
-    }),
-    [isDark],
-  );
-
-  const borderClass = "border-[color:var(--landing-border)]";
-  const panelClass = "bg-[var(--landing-panel)]";
-  const panelAltClass = "bg-[var(--landing-panel-alt)]";
-  const softClass = "bg-[var(--landing-soft)]";
-  const softHoverClass = "hover:bg-[var(--landing-soft-hover)]";
-  const textClass = "text-[color:var(--landing-text)]";
-  const mutedTextClass = "text-[color:var(--landing-muted)]";
-  const dimTextClass = "text-[color:var(--landing-dim)]";
-  const accentTextClass = "text-[color:var(--landing-accent)]";
-
   useEffect(() => {
-    applyThemeClass(theme);
-  }, [theme]);
-
-  useEffect(() => {
-    // In Electron the user already has the app — download buttons are hidden and
-    // electron-updater handles version checks internally, so skip the API call.
     if (isElectron) return;
     fetch("/api/latest-release")
       .then((res) => res.json())
@@ -1017,8 +346,6 @@ export default function Landing() {
       });
   }, []);
 
-  // Open the binary in a new tab. GitHub serves it with Content-Disposition: attachment
-  // so the tab triggers a download immediately and closes — the user stays on this page.
   const handleDownload = (target: "mac" | "windows" | "linux") => {
     if (isElectron) return;
     const url = releaseInfo?.assets[target];
@@ -1032,7 +359,6 @@ export default function Landing() {
       navigate("/tour");
       return;
     }
-
     navigate("/studio");
   };
 
@@ -1040,11 +366,6 @@ export default function Landing() {
     if (isFirstTime) {
       completeOnboarding();
     }
-
-    // AnalystOS is a separate app/deployment now, not a route within this app —
-    // this is a real page load. Defaults to same-origin path (e.g. behind a
-    // shared reverse proxy); override via VITE_ANALYST_OS_URL when AnalystOS
-    // is hosted on a different origin.
     const analystOsUrl = import.meta.env.VITE_ANALYST_OS_URL ?? "/analyst-os";
     window.location.href = analystOsUrl;
   };
@@ -1055,36 +376,40 @@ export default function Landing() {
         "mailto:support@valstine.com?subject=Valstine%20Teams%20Plan";
       return;
     }
-
     handleEnterAnalyst();
   };
 
+  const focusRing =
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+
   return (
     <div
-      className="min-h-screen overflow-auto bg-[var(--landing-bg)] text-[color:var(--landing-text)]"
-      style={themeVars}
+      className={cn(
+        "landing-page min-h-screen overflow-auto bg-background text-foreground",
+        isDark ? "dark theme-black" : "theme-light-modern",
+      )}
     >
       <div
-        className="absolute inset-0 bg-[size:auto,auto,34px_34px,34px_34px] opacity-70"
-        style={overlayStyle}
+        className="pointer-events-none absolute inset-0 opacity-70"
+        style={{
+          backgroundImage: isDark
+            ? "radial-gradient(circle at top left, hsl(var(--primary) / 0.14), transparent 30%), radial-gradient(circle at 84% 16%, hsl(var(--primary) / 0.10), transparent 24%)"
+            : "radial-gradient(circle at top left, hsl(var(--primary) / 0.08), transparent 30%), radial-gradient(circle at 84% 16%, hsl(var(--primary) / 0.06), transparent 24%)",
+        }}
       />
 
       <div className="relative">
-        <nav
-          className={`sticky top-0 z-50 border-b ${borderClass} bg-[var(--landing-nav)] backdrop-blur-xl`}
-        >
+        <nav className="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-xl">
           <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--landing-accent-soft)] text-[color:var(--landing-accent)]">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
                 <Database className="h-4 w-4" />
               </div>
               <div>
-                <div
-                  className={`text-[11px] uppercase tracking-[0.24em] ${accentTextClass}`}
-                >
+                <div className="text-[11px] uppercase tracking-[0.24em] text-primary">
                   Valstine Platform
                 </div>
-                <div className={`text-sm font-medium ${textClass}`}>
+                <div className="text-sm font-medium text-foreground">
                   Studio + Analyst OS
                 </div>
               </div>
@@ -1092,25 +417,30 @@ export default function Landing() {
 
             <div className="flex items-center gap-2">
               <button
-                onClick={toggleTheme}
-                className={`rounded-xl border ${borderClass} ${softClass} p-2 ${mutedTextClass} transition hover:border-[#315ea8]/40 hover:text-[color:var(--landing-text)] ${softHoverClass}`}
-                aria-label="Toggle theme"
-              >
-                {isDark ? (
-                  <Sun className="h-4 w-4" />
-                ) : (
-                  <Moon className="h-4 w-4" />
+                onClick={() => setIsDark((d) => !d)}
+                className={cn(
+                  "rounded-xl border border-border bg-secondary p-2 text-muted-foreground transition hover:bg-accent hover:text-foreground",
+                  focusRing,
                 )}
+                aria-label={isDark ? "Preview light theme" : "Preview dark theme"}
+              >
+                {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </button>
               <button
                 onClick={handleEnterStudio}
-                className={`hidden rounded-xl border ${borderClass} ${softClass} px-4 py-2 text-sm ${mutedTextClass} transition hover:border-[#315ea8]/40 hover:text-[color:var(--landing-text)] ${softHoverClass} md:inline-flex`}
+                className={cn(
+                  "hidden rounded-xl border border-border bg-secondary px-4 py-2 text-sm text-muted-foreground transition hover:bg-accent hover:text-foreground md:inline-flex",
+                  focusRing,
+                )}
               >
                 Open Studio
               </button>
               <button
                 onClick={handleEnterAnalyst}
-                className="rounded-xl border border-[color:var(--landing-accent-strong)]/20 bg-[var(--landing-accent-soft)] px-4 py-2 text-sm font-semibold text-[color:var(--landing-accent-text)] transition hover:bg-[var(--landing-accent-soft-hover)]"
+                className={cn(
+                  "rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90",
+                  focusRing,
+                )}
               >
                 Launch Analyst OS
               </button>
@@ -1118,355 +448,380 @@ export default function Landing() {
           </div>
         </nav>
 
-        <section className="mx-auto max-w-7xl px-4 pb-16 pt-14 sm:px-6 lg:px-8 lg:pb-24 lg:pt-18">
-          <div className="grid gap-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-[color:var(--landing-accent-strong)]/20 bg-[var(--landing-accent-soft)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--landing-accent)]">
-                <Sparkles className="h-3.5 w-3.5" />
-                Two products, one platform
-              </div>
-              <h1
-                className={`mt-6 max-w-3xl text-4xl font-semibold leading-tight tracking-[-0.03em] ${textClass} sm:text-5xl lg:text-6xl`}
-              >
-                A sharper navy design system for database operations and data
-                exploration.
-              </h1>
-              <p
-                className={`mt-6 max-w-2xl text-base leading-7 ${mutedTextClass} sm:text-lg`}
-              >
-                Valstine Studio and Valstine Analyst OS should feel like peers,
-                not one product shadowing the other. This landing hub makes both
-                flows obvious: Studio for operational database work, Analyst OS
-                for analytical workspaces, notebooks, charts, and AI guidance.
-              </p>
+        {/* Hero: one thesis — a single headline, a single primary action. */}
+        <section className="mx-auto max-w-7xl px-4 pb-16 pt-16 sm:px-6 lg:px-8 lg:pb-24 lg:pt-24">
+          <div className="mx-auto max-w-3xl text-center">
+            <div className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+              <Sparkles className="h-3.5 w-3.5" />
+              Two products, one platform
+            </div>
+            <h1 className="mt-6 text-4xl font-semibold leading-[1.1] tracking-[-0.03em] text-foreground text-balance sm:text-5xl lg:text-6xl">
+              Ship database changes. Understand your data.
+              <br className="hidden sm:block" /> One platform, not a compromise.
+            </h1>
+            <p className="mx-auto mt-6 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">
+              Valstine Studio handles the operational work of shipping schema
+              and query changes safely, as a native desktop app. Valstine
+              Analyst OS handles exploring and explaining what's in the
+              database, right in your browser.
+            </p>
 
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                <button
-                  onClick={handleEnterStudio}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--landing-primary-button)] px-6 py-3 text-sm font-semibold text-[color:var(--landing-primary-button-text)] transition hover:bg-[var(--landing-primary-button-hover)]"
-                >
-                  Enter Studio
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={handleEnterAnalyst}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--landing-accent-strong)]/20 bg-[var(--landing-accent-soft)] px-6 py-3 text-sm font-semibold text-[color:var(--landing-accent-text)] transition hover:bg-[var(--landing-accent-soft-hover)]"
-                >
-                  Enter Analyst OS
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-                {!isElectron && platform !== "unknown" ? (
-                  <button
-                    onClick={() => handleDownload(platform)}
-                    className={`inline-flex items-center justify-center gap-2 rounded-2xl border ${borderClass} ${softClass} px-6 py-3 text-sm font-medium ${mutedTextClass} transition hover:border-[#315ea8]/40 hover:text-[color:var(--landing-text)] ${softHoverClass}`}
-                  >
-                    <Download className="h-4 w-4" />
-                    Install for{" "}
-                    {platform === "mac"
-                      ? "macOS"
-                      : platform === "windows"
-                        ? "Windows"
-                        : "Linux"}
-                  </button>
-                ) : null}
-              </div>
+            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <button
+                onClick={handleEnterStudio}
+                className={cn(
+                  "inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90",
+                  focusRing,
+                )}
+              >
+                Enter Studio
+                <ArrowRight className="h-4 w-4" />
+              </button>
+              <button
+                onClick={handleEnterAnalyst}
+                className={cn(
+                  "inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-secondary px-6 py-3 text-sm font-semibold text-foreground transition hover:bg-accent",
+                  focusRing,
+                )}
+              >
+                Enter Analyst OS
+              </button>
+            </div>
 
-              <div className="mt-10 grid gap-4 sm:grid-cols-3">
-                {productPillars.map((item) => (
-                  <div
-                    key={item.title}
-                    className={`rounded-2xl border ${borderClass} ${panelAltClass} p-4`}
-                    style={{ boxShadow: "var(--landing-card-shadow)" }}
-                  >
-                    <item.icon className="h-5 w-5 text-[#8db6ff]" />
-                    <div className={`mt-4 text-sm font-medium ${textClass}`}>
-                      {item.title}
+            {!isElectron && platform !== "unknown" ? (
+              <button
+                onClick={() => handleDownload(platform)}
+                className={cn(
+                  "mt-5 inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 transition hover:text-foreground hover:underline",
+                  focusRing,
+                  "rounded-md",
+                )}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Install for{" "}
+                {platform === "mac" ? "macOS" : platform === "windows" ? "Windows" : "Linux"}
+              </button>
+            ) : null}
+          </div>
+
+          <Reveal className="mx-auto mt-14 max-w-5xl">
+            <ThemedScreenshot
+              base="studio"
+              isDark={isDark}
+              alt="Valstine Studio workspace showing the query editor, schema diff, and results grid"
+            />
+          </Reveal>
+
+          <div className="mx-auto mt-14 grid max-w-4xl gap-8 sm:grid-cols-3">
+            {trustStrip.map((item) => (
+              <div key={item.label} className="flex items-start gap-3">
+                <item.icon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <div>
+                  <div className="text-sm font-medium text-foreground">{item.label}</div>
+                  <div className="mt-1 text-[13px] leading-5 text-muted-foreground">
+                    {item.detail}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Products */}
+        <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+          <Reveal className="grid gap-6 lg:grid-cols-2">
+            {products.map((product) => (
+              <div
+                key={product.id}
+                className="group flex h-full flex-col rounded-2xl border border-border bg-card p-6 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="rounded-full border border-border bg-secondary px-3 py-1 text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+                    {product.badge}
+                  </span>
+                  {product.id === "studio" ? (
+                    <GitBranch className="h-4 w-4 text-primary" />
+                  ) : (
+                    <Bot className="h-4 w-4 text-primary" />
+                  )}
+                </div>
+                <div className="mt-6 text-2xl font-semibold text-foreground">
+                  {product.title}
+                </div>
+                <div className="mt-3 text-sm leading-7 text-muted-foreground">
+                  {product.summary}
+                </div>
+                <div className="mt-6 space-y-3 text-[13px] text-muted-foreground">
+                  {product.points.map((point) => (
+                    <div key={point} className="flex gap-3">
+                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                      <span>{point}</span>
                     </div>
-                    <div
-                      className={`mt-2 text-[13px] leading-6 ${dimTextClass}`}
-                    >
-                      {item.description}
+                  ))}
+                </div>
+                <div className="mt-8">
+                  <button
+                    onClick={product.id === "studio" ? handleEnterStudio : handleEnterAnalyst}
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90",
+                      focusRing,
+                    )}
+                  >
+                    {product.cta}
+                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </Reveal>
+        </section>
+
+        {/* Supported databases */}
+        <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+          <Reveal className="grid gap-10 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:items-center">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.24em] text-primary">
+                Database support
+              </div>
+              <h2 className="mt-4 text-3xl font-semibold text-foreground sm:text-4xl text-balance">
+                Every database you actually use.
+              </h2>
+              <p className="mt-4 text-base leading-7 text-muted-foreground">
+                Relational, document, key-value, and wide-column stores —
+                connect once and both workspaces understand your schema.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-8 gap-y-6 sm:grid-cols-4">
+              {supportedDatabases.map((key) => {
+                const meta = DB_TYPE_META[key];
+                return (
+                  <div key={key} className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-lg">
+                      {meta.icon}
+                    </span>
+                    <span className="text-sm font-medium text-foreground">
+                      {meta.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </Reveal>
+        </section>
+
+        {/* Feature grid */}
+        <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+          <Reveal className="mx-auto max-w-2xl text-center">
+            <div className="text-[11px] uppercase tracking-[0.24em] text-primary">
+              Everything included
+            </div>
+            <h2 className="mt-4 text-3xl font-semibold text-foreground sm:text-4xl text-balance">
+              Built with everything you need, out of the box.
+            </h2>
+            <p className="mt-4 text-base leading-7 text-muted-foreground">
+              No plugins to hunt down before a workspace feels complete.
+            </p>
+          </Reveal>
+
+          <Reveal className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {features.map((feature) => (
+              <div
+                key={feature.title}
+                className="rounded-2xl border border-border bg-card p-6 transition duration-300 hover:-translate-y-1 hover:shadow-lg"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-secondary text-primary">
+                  <feature.icon className="h-5 w-5" />
+                </div>
+                <div className="mt-4 text-sm font-semibold text-foreground">
+                  {feature.title}
+                </div>
+                <div className="mt-2 text-[13px] leading-6 text-muted-foreground">
+                  {feature.body}
+                </div>
+              </div>
+            ))}
+          </Reveal>
+        </section>
+
+        {/* Analyst OS screenshot + platform reach */}
+        <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-center">
+            <Reveal>
+              <div className="text-[11px] uppercase tracking-[0.24em] text-primary">
+                Available everywhere
+              </div>
+              <h2 className="mt-4 text-3xl font-semibold text-foreground sm:text-4xl text-balance">
+                Desktop where it matters, browser where it's easier.
+              </h2>
+              <p className="mt-4 text-base leading-7 text-muted-foreground">
+                Studio installs natively on macOS, Windows, and Linux for
+                operational database work. Analyst OS runs entirely in the
+                browser — no install, same design language.
+              </p>
+              <div className="mt-8 grid gap-4">
+                {platformCards.map((card) => (
+                  <div key={card.title} className="flex items-start gap-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-primary">
+                      <card.icon className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-foreground">
+                        {card.title}
+                      </div>
+                      <div className="mt-1 text-[13px] leading-6 text-muted-foreground">
+                        {card.body}
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
+            </Reveal>
 
-            <div className="grid gap-5">
-              <StudioPreview borderClass={borderClass} isDark={isDark} />
-              <AnalystPreview borderClass={borderClass} isDark={isDark} />
-            </div>
+            <Reveal>
+              <ThemedScreenshot
+                base="analyst"
+                isDark={isDark}
+                alt="Valstine Analyst OS workspace showing a SQL notebook, AI insight, and visualization"
+              />
+            </Reveal>
           </div>
         </section>
 
-        <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-          <div className="grid gap-6 lg:grid-cols-2">
-            {products.map((product) => (
-              <div
-                key={product.id}
-                className={`rounded-[30px] border ${product.border} bg-gradient-to-br ${product.accent} p-[1px]`}
-                style={{ boxShadow: "var(--landing-shadow)" }}
-              >
-                <div className={`h-full rounded-[29px] ${panelClass} p-6`}>
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={`rounded-full border ${borderClass} ${softClass} px-3 py-1 text-[10px] uppercase tracking-[0.22em] ${dimTextClass}`}
-                    >
-                      {product.badge}
-                    </span>
-                    {product.id === "studio" ? (
-                      <GitBranch className="h-4 w-4 text-[color:var(--landing-accent)]" />
-                    ) : (
-                      <Bot className="h-4 w-4 text-[color:var(--landing-accent)]" />
-                    )}
-                  </div>
-                  <div className={`mt-6 text-2xl font-semibold ${textClass}`}>
-                    {product.title}
-                  </div>
-                  <div className={`mt-3 text-sm leading-7 ${mutedTextClass}`}>
-                    {product.summary}
-                  </div>
-                  <div className={`mt-6 space-y-3 text-[13px] ${dimTextClass}`}>
-                    {product.points.map((point) => (
-                      <div key={point} className="flex gap-3">
-                        <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--landing-accent)]" />
-                        <span>{point}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-8 flex items-center gap-3">
-                    <button
-                      onClick={
-                        product.id === "studio"
-                          ? handleEnterStudio
-                          : handleEnterAnalyst
-                      }
-                      className="inline-flex items-center gap-2 rounded-2xl bg-[var(--landing-primary-button)] px-4 py-2.5 text-sm font-semibold text-[color:var(--landing-primary-button-text)] transition hover:bg-[var(--landing-primary-button-hover)]"
-                    >
-                      {product.cta}
-                      <ArrowRight className="h-4 w-4" />
-                    </button>
-                    <div className={`text-xs ${dimTextClass}`}>
-                      {product.id === "studio"
-                        ? "Schema comparison, connections, Git, terminal"
-                        : "SQL, notebooks, AI guidance, charts, migrations"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-14">
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start">
+        {/* Pricing */}
+        <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+          <Reveal className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <div
-                className={`text-[11px] uppercase tracking-[0.24em] ${accentTextClass}`}
-              >
-                Design and platforms
-              </div>
-              <h2
-                className={`mt-4 text-3xl font-semibold ${textClass} sm:text-4xl`}
-              >
-                Navy-first, product-led, and clear about where each workflow
-                lives.
-              </h2>
-              <p className={`mt-4 text-base leading-7 ${dimTextClass}`}>
-                The palette now leans into navy and layered blue instead of
-                neutral gray. The landing page also makes the product split
-                explicit with two separate preview images, clearer descriptions,
-                and install messaging that supports both design identity and
-                platform reach.
-              </p>
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <div
-                  className={`rounded-2xl border ${borderClass} ${panelAltClass} p-4`}
-                >
-                  <div className="mb-2 flex items-center gap-2 text-sm font-medium text-[color:var(--landing-accent)]">
-                    <PanelsTopLeft className="h-4 w-4" />
-                    Studio visual language
-                  </div>
-                  <div className={`text-[13px] leading-6 ${dimTextClass}`}>
-                    More operational, pane-driven, and diff-oriented for
-                    database shipping workflows.
-                  </div>
-                </div>
-                <div
-                  className={`rounded-2xl border ${borderClass} ${panelAltClass} p-4`}
-                >
-                  <div className="mb-2 flex items-center gap-2 text-sm font-medium text-[color:var(--landing-accent)]">
-                    <Bot className="h-4 w-4" />
-                    Analyst OS visual language
-                  </div>
-                  <div className={`text-[13px] leading-6 ${dimTextClass}`}>
-                    More exploratory, insight-led, and chart-aware for SQL and
-                    notebook workflows.
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              {platformCards.map((card) => (
-                <div
-                  key={card.title}
-                  className={`rounded-2xl border ${borderClass} ${panelAltClass} p-5`}
-                  style={{ boxShadow: "var(--landing-card-shadow)" }}
-                >
-                  <card.icon className="h-5 w-5 text-[color:var(--landing-accent)]" />
-                  <div className={`mt-4 text-lg font-medium ${textClass}`}>
-                    {card.title}
-                  </div>
-                  <div className={`mt-2 text-[13px] leading-6 ${dimTextClass}`}>
-                    {card.body}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <div
-                className={`text-[11px] uppercase tracking-[0.24em] ${accentTextClass}`}
-              >
+              <div className="text-[11px] uppercase tracking-[0.24em] text-primary">
                 Pricing
               </div>
-              <h2
-                className={`mt-4 text-3xl font-semibold ${textClass} sm:text-4xl`}
-              >
+              <h2 className="mt-4 text-3xl font-semibold text-foreground sm:text-4xl text-balance">
                 Simple plans for students, solo operators, and teams.
               </h2>
-              <p
-                className={`mt-4 max-w-2xl text-base leading-7 ${dimTextClass}`}
-              >
+              <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">
                 Every plan includes both Valstine Studio and Analyst OS. As the
                 platform expands, plan-specific capabilities can grow with it.
               </p>
             </div>
-            <div
-              className={`rounded-2xl border ${borderClass} ${softClass} px-4 py-3 text-sm ${mutedTextClass}`}
-            >
+            <div className="rounded-xl border border-border bg-secondary px-4 py-3 text-sm text-muted-foreground">
               AI usage and cloud deployment limits scale by plan.
             </div>
-          </div>
+          </Reveal>
 
           <div className="mt-8 grid gap-5 lg:grid-cols-3">
             {pricingPlans.map((plan) => (
-              <div
-                key={plan.name}
-                className={`rounded-[30px] border ${plan.highlight ? "border-[color:var(--landing-accent-strong)]/35" : borderClass} ${plan.highlight ? "bg-[linear-gradient(180deg,rgba(33,76,145,0.18),rgba(33,76,145,0.06))]" : panelClass} p-6`}
-                style={{ boxShadow: "var(--landing-card-shadow)" }}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div
-                      className={`inline-flex rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.2em] ${plan.highlight ? "border-[color:var(--landing-accent-strong)]/35 bg-[var(--landing-accent-soft)] text-[color:var(--landing-accent)]" : `${borderClass} ${softClass} ${dimTextClass}`}`}
-                    >
-                      {plan.badge}
-                    </div>
-                    <div className={`mt-4 text-xl font-semibold ${textClass}`}>
-                      {plan.name}
-                    </div>
-                  </div>
-                  <div className="rounded-2xl bg-[var(--landing-accent-soft)] p-3 text-[color:var(--landing-accent)]">
-                    {plan.highlight ? (
-                      <Sparkles className="h-5 w-5" />
-                    ) : plan.name === "Teams" ? (
-                      <Layers3 className="h-5 w-5" />
-                    ) : (
-                      <Bot className="h-5 w-5" />
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-6 flex items-end gap-2">
-                  <div className={`text-4xl font-semibold ${textClass}`}>
-                    {plan.price}
-                  </div>
-                  <div className={`pb-1 text-sm ${mutedTextClass}`}>
-                    {plan.cadence}
-                  </div>
-                </div>
-
-                <p className={`mt-4 text-sm leading-7 ${mutedTextClass}`}>
-                  {plan.summary}
-                </p>
-
-                <div className="mt-6 space-y-3">
-                  {plan.features.map((feature) => (
-                    <div key={feature} className="flex gap-3">
-                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[var(--landing-accent)]" />
-                      <span className={`text-[13px] leading-6 ${dimTextClass}`}>
-                        {feature}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                <button
-                  onClick={() => handlePricingAction(plan.action)}
-                  className={`mt-8 inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${plan.highlight ? "bg-[var(--landing-primary-button)] text-[color:var(--landing-primary-button-text)] hover:bg-[var(--landing-primary-button-hover)]" : "border border-[color:var(--landing-accent-strong)]/20 bg-[var(--landing-accent-soft)] text-[color:var(--landing-accent-text)] hover:bg-[var(--landing-accent-soft-hover)]"}`}
+              <Reveal key={plan.name}>
+                <div
+                  className={cn(
+                    "flex h-full flex-col rounded-2xl border p-6 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg",
+                    plan.highlight
+                      ? "border-primary/40 bg-primary/[0.04]"
+                      : "border-border bg-card",
+                  )}
                 >
-                  {plan.cta}
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-              </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div
+                        className={cn(
+                          "inline-flex rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.2em]",
+                          plan.highlight
+                            ? "border-primary/40 bg-primary/10 text-primary"
+                            : "border-border bg-secondary text-muted-foreground",
+                        )}
+                      >
+                        {plan.badge}
+                      </div>
+                      <div className="mt-4 text-xl font-semibold text-foreground">
+                        {plan.name}
+                      </div>
+                    </div>
+                    <div className="rounded-xl bg-primary/10 p-3 text-primary">
+                      {plan.highlight ? (
+                        <Sparkles className="h-5 w-5" />
+                      ) : plan.name === "Teams" ? (
+                        <Layers3 className="h-5 w-5" />
+                      ) : (
+                        <Bot className="h-5 w-5" />
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-6 flex items-end gap-2">
+                    <div className="text-4xl font-semibold text-foreground">
+                      {plan.price}
+                    </div>
+                    <div className="pb-1 text-sm text-muted-foreground">
+                      {plan.cadence}
+                    </div>
+                  </div>
+
+                  <p className="mt-4 text-sm leading-7 text-muted-foreground">
+                    {plan.summary}
+                  </p>
+
+                  <div className="mt-6 flex-1 space-y-3">
+                    {plan.features.map((feature) => (
+                      <div key={feature} className="flex gap-3">
+                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                        <span className="text-[13px] leading-6 text-muted-foreground">
+                          {feature}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={() => handlePricingAction(plan.action)}
+                    className={cn(
+                      "mt-8 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition",
+                      plan.highlight
+                        ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                        : "border border-border bg-secondary text-foreground hover:bg-accent",
+                      focusRing,
+                    )}
+                  >
+                    {plan.cta}
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </Reveal>
             ))}
           </div>
         </section>
 
+        {/* Download */}
         <section className="mx-auto max-w-7xl px-4 pb-20 pt-2 sm:px-6 lg:px-8 lg:pb-24">
-          <div
-            className={`rounded-[30px] border ${borderClass} ${panelClass} p-6 sm:p-8`}
-            style={{ boxShadow: "var(--landing-shadow)" }}
-          >
-            {/* Header row */}
+          <Reveal className="rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <div
-                  className={`text-[11px] uppercase tracking-[0.24em] ${accentTextClass}`}
-                >
+                <div className="text-[11px] uppercase tracking-[0.24em] text-primary">
                   Download
                 </div>
-                <h2 className={`mt-3 text-3xl font-semibold ${textClass}`}>
-                  One install. Studio and Analyst OS included.
+                <h2 className="mt-3 text-3xl font-semibold text-foreground text-balance">
+                  Install Studio. Analyst OS is already in your browser.
                 </h2>
-                <p
-                  className={`mt-3 max-w-xl text-sm leading-7 ${dimTextClass}`}
-                >
-                  A single cross-platform app ships both workspaces. Install
-                  once and switch between Studio and Analyst OS from the home
-                  screen.
+                <p className="mt-3 max-w-xl text-sm leading-7 text-muted-foreground">
+                  Studio installs natively for macOS, Windows, and Linux.
+                  Analyst OS needs no download — launch it straight from the
+                  button above.
                 </p>
               </div>
 
-              {/* Version badge */}
-              <div className={`flex flex-col items-end gap-2`}>
-                <div
-                  className={`inline-flex items-center gap-2 rounded-full border ${borderClass} bg-[var(--landing-accent-soft)] px-4 py-1.5`}
-                >
-                  <span
-                    className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${accentTextClass}`}
-                  >
+              <div className="flex flex-col items-end gap-2">
+                <div className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary px-4 py-1.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
                     {releaseInfo?.tag ?? "Latest"}
                   </span>
-                  <span className={`text-[10px] ${dimTextClass}`}>Stable</span>
+                  <span className="text-[10px] text-muted-foreground">Stable</span>
                 </div>
                 {releaseInfo?.publishedAt && (
-                  <span className={`text-[11px] ${dimTextClass}`}>
+                  <span className="text-[11px] text-muted-foreground">
                     Released{" "}
-                    {new Date(releaseInfo.publishedAt).toLocaleDateString(
-                      "en-US",
-                      {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      },
-                    )}
+                    {new Date(releaseInfo.publishedAt).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
                   </span>
                 )}
                 {!isElectron && releaseInfo?.releaseUrl && (
@@ -1474,7 +829,11 @@ export default function Landing() {
                     href={releaseInfo.releaseUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className={`text-[11px] underline underline-offset-2 ${accentTextClass} hover:opacity-80`}
+                    className={cn(
+                      "text-[11px] text-primary underline underline-offset-2 hover:opacity-80",
+                      focusRing,
+                      "rounded-sm",
+                    )}
                   >
                     Release notes →
                   </a>
@@ -1482,67 +841,45 @@ export default function Landing() {
               </div>
             </div>
 
-            {/* Download buttons — web only. Inside the Electron shell users already
-                have the app; electron-updater delivers updates natively. */}
             {!isElectron && (
               <>
                 <div className="mt-8 grid gap-3 sm:grid-cols-3">
                   {(
                     [
-                      {
-                        key: "mac" as const,
-                        label: "macOS",
-                        sub: ".dmg · Universal binary",
-                        Icon: Apple,
-                      },
-                      {
-                        key: "windows" as const,
-                        label: "Windows",
-                        sub: ".exe · NSIS installer",
-                        Icon: Laptop,
-                      },
-                      {
-                        key: "linux" as const,
-                        label: "Linux",
-                        sub: ".AppImage · No install needed",
-                        Icon: TerminalSquare,
-                      },
+                      { key: "mac" as const, label: "macOS", sub: ".dmg · Universal binary", Icon: Apple },
+                      { key: "windows" as const, label: "Windows", sub: ".exe · NSIS installer", Icon: Laptop },
+                      { key: "linux" as const, label: "Linux", sub: ".AppImage · No install needed", Icon: TerminalSquare },
                     ] as const
                   ).map(({ key, label, sub, Icon }) => (
                     <button
                       key={key}
                       onClick={() => handleDownload(key)}
-                      className={`group relative flex flex-col items-start gap-1 rounded-2xl border ${borderClass} ${softClass} px-5 py-4 text-left transition hover:border-[#315ea8]/40 ${softHoverClass}`}
+                      className={cn(
+                        "group relative flex flex-col items-start gap-1 rounded-xl border border-border bg-secondary px-5 py-4 text-left transition hover:bg-accent",
+                        focusRing,
+                      )}
                     >
                       <div className="flex w-full items-center justify-between">
-                        <Icon className={`h-5 w-5 ${accentTextClass}`} />
+                        <Icon className="h-5 w-5 text-primary" />
                         {platform === key && (
-                          <span
-                            className={`rounded-full border ${borderClass} bg-[var(--landing-accent-soft)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-widest ${accentTextClass}`}
-                          >
+                          <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[9px] font-semibold uppercase tracking-widest text-primary">
                             Your platform
                           </span>
                         )}
                       </div>
-                      <span
-                        className={`mt-2 text-sm font-semibold ${textClass}`}
-                      >
-                        {label}
-                      </span>
-                      <span className={`text-[11px] ${dimTextClass}`}>
-                        {sub}
-                      </span>
+                      <span className="mt-2 text-sm font-semibold text-foreground">{label}</span>
+                      <span className="text-[11px] text-muted-foreground">{sub}</span>
                     </button>
                   ))}
                 </div>
 
-                <p className={`mt-5 text-[11px] ${dimTextClass}`}>
+                <p className="mt-5 text-[11px] text-muted-foreground">
                   Auto-updates are built in — the app notifies you when a new
                   version is available.
                 </p>
               </>
             )}
-          </div>
+          </Reveal>
         </section>
       </div>
     </div>
